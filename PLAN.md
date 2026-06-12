@@ -1,0 +1,621 @@
+# Cartograph — Project Plan
+
+> **Watch AI agents map your codebase.**
+> Paste a GitHub repo URL → a fleet of agents explores it live → you get an interactive
+> architecture map, a guided onboarding walkthrough, and a chat that answers questions
+> with verified `file:line` citations — at ~1/50th the cost per question after the first one.
+
+| | |
+|---|---|
+| **Status** | Planning |
+| **Timeline** | ~4 weeks to public v1 |
+| **LLM Provider** | Google Gemini (`google-genai` Python SDK) |
+| **Primary goals** | (1) Portfolio piece demonstrating SOTA multi-agent + GraphRAG engineering to AI engineers and hiring managers. (2) Genuinely useful tool for onboarding onto unfamiliar codebases. |
+| **Audience** | AI engineers, hiring managers, open-source contributors, new hires |
+
+---
+
+## 1. Product Vision
+
+### 1.1 The pitch
+
+Understanding an unfamiliar codebase is one of the most universal pains in software:
+new hires take weeks to ramp, open-source contributors bounce off repos they can't
+navigate, and interviewers/clients constantly evaluate code they didn't write.
+
+Cartograph turns that into a two-minute experience:
+
+1. **Paste a repo URL.** Cartograph clones it and builds a structural knowledge graph
+   (zero LLM cost — derived from the AST).
+2. **Watch agents explore.** A planner partitions the repo into subsystems and spawns
+   parallel explorer agents. Their activity streams live to a "mission control" view.
+   A critic adversarially verifies every claim before it's accepted.
+3. **Get the atlas.** An interactive architecture graph, a generated onboarding
+   walkthrough ("read these 7 files in this order"), and a chat that answers questions
+   with `file:line` citations — every citation checked against the actual file before
+   it's shown.
+4. **Come back later, pay almost nothing.** The knowledge graph persists. Repeat
+   questions are answered from the graph in seconds for fractions of a cent, with
+   live agent exploration only as an escalation path — and anything those escalation
+   agents learn is written back into the graph, so the system gets cheaper and smarter
+   with use.
+
+### 1.2 Why this project (positioning)
+
+"Chat with your codebase" exists (Cursor, Copilot, Greptile). Cartograph's
+differentiation — and the things that signal engineering depth — are:
+
+- **Visible multi-agent exploration**, not a hidden RAG pipeline. The supervisor →
+  parallel explorers → synthesizer → critic topology is *structurally justified* by
+  the problem (codebases genuinely partition into independently explorable subsystems),
+  not decorative.
+- **GraphRAG built the cheap way.** For code, the entity/relation graph is derivable
+  statically (tree-sitter + import/call resolution) — the LLM is only needed for the
+  semantic layer (summaries). Classic document-GraphRAG burns tokens extracting
+  entities; we get ours for free. This insight is a centerpiece of the technical
+  writeup.
+- **Verified citations.** Every `file:line` claim is checked against the real file
+  before display. Hallucinated citations are caught and regenerated.
+- **Published evals.** A real `evals/` directory with golden Q&A sets for well-known
+  repos and a citation-accuracy scoreboard in the README.
+- **An honest cost story.** "First question: ~$0.50 and 90s. Every question after:
+  ~$0.01 and 3s" — with the architecture that makes it true.
+
+### 1.3 Non-goals (v1)
+
+- **Not** a code *editing* tool. Read/understand only.
+- **Not** multi-tenant SaaS with auth/billing. Single-deploy demo + local-run.
+- **Not** support for every language. v1: **Python + TypeScript/JavaScript** (tree-sitter
+  grammars are mature; covers the demo repos). Architecture must make adding a language
+  a config change, not a rewrite.
+- **Not** monorepo-scale (Chromium). Target: repos up to ~5k files / ~500k LOC.
+  Larger repos get a clear "partial index" message, not silent truncation.
+- **No** fine-tuning, no self-hosted models in v1.
+
+---
+
+## 2. System Architecture
+
+### 2.1 Bird's-eye view
+
+Two-phase system: **expensive indexing once per repo**, **cheap queries forever after**.
+
+```
+                          ┌──────────────────────────────────────────────┐
+                          │                INDEX TIME (once)             │
+                          │                                              │
+ GitHub URL ──► Cloner ──►│ 1. Static pass (tree-sitter)                 │
+                          │      symbols + edges, $0, deterministic     │
+                          │ 2. Agent enrichment (LangGraph fleet)        │
+                          │      Planner → N Explorers → Synthesizer     │
+                          │      → Critic loop; findings WRITTEN INTO    │
+                          │      the graph                               │
+                          │ 3. Community detection (Leiden) +            │
+                          │      hierarchical summaries (Gemini Flash)   │
+                          └──────────────┬───────────────────────────────┘
+                                         │ persisted knowledge graph
+                                         ▼
+                          ┌──────────────────────────────────────────────┐
+                          │              QUERY TIME (every Q)            │
+                          │                                              │
+ User question ──► Router │  local search   │ global search │ escalate   │
+                          │  (entity hood)  │ (community    │ (live agent│
+                          │  1 small call   │  summaries)   │  + write-  │
+                          │                 │  1 small call │  back)     │
+                          │        └──── Citation Verifier ────┘         │
+                          └──────────────────────────────────────────────┘
+                                         │ WebSocket event stream
+                                         ▼
+                              Next.js UI (mission control /
+                              architecture graph / cited chat)
+```
+
+### 2.2 Phase 1 — Indexing pipeline
+
+#### Step 1: Clone & static analysis (zero LLM cost)
+
+- Shallow-clone the repo into a sandboxed workspace (see §10 Security).
+- **tree-sitter** parses every supported source file into an AST.
+- Extract **nodes**: `repo → package/module → file → class → function/method`,
+  plus `config`, `doc`, and `test` file nodes.
+- Extract **edges** deterministically:
+  - `CONTAINS` (structural nesting)
+  - `IMPORTS` (import resolution, including relative/aliased imports)
+  - `CALLS` (best-effort static call resolution; mark confidence — dynamic dispatch
+    in Python is annotated `confidence: low` rather than guessed)
+  - `INHERITS`, `IMPLEMENTS`
+  - `TESTS` (test file ↔ subject heuristics: path conventions + imports)
+- Compute per-node metrics used later for prioritization: LOC, fan-in/fan-out,
+  git churn (commit count touching the file), centrality.
+- **Output:** a complete structural skeleton in Postgres. This step takes seconds,
+  costs $0, and is fully re-runnable.
+
+Key implementation note: chunking for embeddings is **AST-aware** — a chunk is a
+function/class with its docstring and signature context, never an arbitrary 1,000-char
+window. Each chunk records exact `(path, start_line, end_line)` so citations are
+mechanical, not inferred.
+
+#### Step 2: Multi-agent enrichment (the showpiece)
+
+Implemented as a **LangGraph** graph (recognizable framework; its supervisor pattern
+maps exactly to our topology). All agents call Gemini through a thin internal
+`llm.py` wrapper (see §5.3) so model choice, retries, token accounting, and cost
+tracking live in one place.
+
+| Agent | Role | Model tier | Output |
+|---|---|---|---|
+| **Planner** | Reads the structural skeleton (dir tree, top-central nodes, manifests, README) and partitions the repo into 3–8 subsystems with exploration briefs. | Pro-tier | `ExplorationPlan` (Pydantic) |
+| **Explorer ×N** | One per subsystem, run in parallel. Each has tools: `read_file`, `get_node`, `get_neighbors`, `search_graph`, `grep`. Explores its territory and emits **structured findings**: node summaries, role annotations ("this is the auth boundary"), key flows, surprises/code smells. | Flash-tier (cheap, parallel) | `list[Finding]` |
+| **Synthesizer** | Merges explorer findings into the coherent repo-level model: subsystem descriptions, cross-subsystem flows, the onboarding walkthrough, architecture-level annotations. | Pro-tier | `RepoModel` |
+| **Critic** | Adversarially verifies a sample of claims **against the actual code** (re-reads cited files, checks that named symbols exist, checks edge claims against the static graph). Rejected claims go back to the owning explorer for one revision round; twice-rejected claims are dropped and logged. | Pro-tier | `list[Verdict]` |
+| **Librarian** (writer, not an LLM agent) | Persists accepted findings into the graph as node/edge annotations and summaries. Every write is attributed (`source: explorer_3, verified_by: critic, run_id`). | — | graph mutations |
+
+Design rules that keep this honest:
+
+- **Every agent's output is structured** (Gemini JSON mode / `response_schema` with
+  Pydantic models). No free-text parsing between agents.
+- **Findings are claims, not facts**, until the critic passes them. The graph stores
+  verification status per annotation.
+- **The agents write to the graph, not to a transcript.** This is the core
+  architectural idea: exploration produces a durable artifact, so its cost amortizes.
+- **Hard budgets:** per-agent tool-call cap, per-run token budget, and wall-clock
+  timeout. A runaway explorer gets cancelled, its partial findings flagged.
+- **Every agent event** (spawn, tool call, finding, verdict, handoff) is published to
+  the run's event log → streamed over WebSocket → rendered in mission control. The
+  event log is also the debugging/replay record.
+
+#### Step 3: Community detection + hierarchical summaries
+
+- Run **Leiden** clustering (via `igraph`/`leidenalg`) over the enriched graph
+  (weighted: structural edges + co-change affinity from git history).
+- Build a 2–3 level community hierarchy: `repo → subsystem communities → tight clusters`.
+- Generate a summary per community with Gemini Flash, **bottom-up**: leaf-cluster
+  summaries are composed from member node summaries; parent summaries are composed
+  from child summaries. This caps prompt sizes and makes invalidation surgical (§9).
+- Embed all node and community summaries (Gemini embedding model) into pgvector.
+
+**Indexing cost model (estimate, to be measured in week 1):** a 1,500-file repo ≈
+6k symbols → ~6k Flash summarization calls (batched) + ~40 explorer/synthesis/critic
+calls + ~150 community summaries. Target: **< $1.00 and < 3 minutes** on Flash-tier
+pricing for mid-size repos. These numbers go in the README once measured.
+
+### 2.3 Phase 2 — Query pipeline
+
+#### Router
+
+A single cheap classification call (Flash, JSON mode) labels each question:
+
+| Route | Trigger | Strategy | Typical cost |
+|---|---|---|---|
+| **Local** | Names or implies a specific symbol/file ("what does `refresh_token` do?", "where is rate limiting?") | Embed query → top-k entity match → pull graph neighborhood (the node, its summary, callers, callees, containing community summary) → one synthesis call | ~$0.005, ~2–3s |
+| **Global** | Architecture/big-picture ("how does error handling work overall?", "what are the main components?") | Map over relevant community summaries (already computed) → one reduce call. Drill into specific nodes only if confidence is low. | ~$0.01, ~3–5s |
+| **Escalate** | Router or answerer signals the graph can't support an answer (low retrieval scores, critic-rejected draft, "why was this designed this way" style questions) | Spawn a **single live explorer agent** with graph + file tools, scoped to the question. Its verified findings are **written back** into the graph. | ~$0.05–0.15, ~20–60s |
+
+#### Hybrid retrieval (used by local route and escalation)
+
+- **BM25** (Postgres full-text or `rank_bm25`) over code + summaries — code questions
+  are often exact-identifier lookups where embeddings underperform.
+- **Dense** retrieval over pgvector summary/chunk embeddings.
+- **Graph expansion**: from the top hits, walk 1-hop neighborhoods (callers/callees/
+  siblings) to assemble context that *explains* rather than just matches.
+- Reciprocal-rank fusion to merge; optional rerank pass only if eval data shows it
+  pays for itself (measure first, don't cargo-cult).
+
+#### Citation verification (non-negotiable)
+
+Every answer must end in `citations: [{path, start_line, end_line, quoted_snippet}]`
+(enforced by response schema). Before display, the verifier:
+
+1. Confirms the path exists at the indexed commit.
+2. Confirms the quoted snippet actually appears within ±3 lines of the cited range.
+3. On failure: one regeneration attempt with the violation named; if it fails again,
+   the answer ships with the bad citation **removed and the claim downgraded to
+   "unverified"** — visibly, in the UI. Never silently keep a fake citation.
+
+Verification results are logged per answer → feeds the eval dashboard (§8).
+
+#### Answer write-back
+
+Escalation findings, and high-confidence answer syntheses for questions the graph
+couldn't answer locally, are written back as graph annotations (critic-checked,
+attributed). A repeated question that needed escalation yesterday is a local-route
+hit today. **The graph is a learning cache.** This loop is a headline feature of
+the writeup.
+
+---
+
+## 3. Data Model
+
+Postgres (+ pgvector). Graph traversal/clustering happens in-process with NetworkX/
+igraph loaded from these tables — **deliberately no Neo4j in v1** (documented as a
+considered-and-deferred decision; nothing at our scale needs it).
+
+```sql
+repos        (id, url, default_branch, head_commit, status, indexed_at,
+              index_cost_usd, stats jsonb)
+
+nodes        (id, repo_id, kind,            -- repo|package|file|class|function|...
+              fqname, path, start_line, end_line,
+              signature, docstring,
+              metrics jsonb,                -- loc, fan_in, fan_out, churn, centrality
+              summary text,                 -- LLM-written, 1-2 lines
+              summary_embedding vector,
+              annotations jsonb[],          -- {text, source, verified, run_id, created_at}
+              content_hash)                 -- for incremental invalidation
+
+edges        (id, repo_id, src_node_id, dst_node_id,
+              kind,                         -- contains|imports|calls|inherits|tests
+              confidence, metadata jsonb)
+
+communities  (id, repo_id, level, parent_id,
+              member_node_ids bigint[],
+              title, summary text, summary_embedding vector,
+              dirty boolean)                -- invalidation flag
+
+chunks       (id, repo_id, node_id, path, start_line, end_line,
+              text, embedding vector, tsv tsvector)   -- hybrid retrieval unit
+
+index_runs   (id, repo_id, kind,            -- full|incremental|escalation
+              status, started_at, finished_at,
+              token_usage jsonb, cost_usd)
+
+agent_events (id, run_id, ts, agent, type,  -- spawn|tool_call|finding|verdict|error
+              payload jsonb)                -- the replay/debug/UI stream record
+
+questions    (id, repo_id, text, route, answer jsonb,
+              citations jsonb, citation_verified boolean,
+              cost_usd, latency_ms, created_at)
+```
+
+---
+
+## 4. Backend Design (Python / FastAPI)
+
+### 4.1 Service layout
+
+Single deployable FastAPI app + a worker process. No microservices — v1 runs as
+`api` + `worker` + `postgres` via docker-compose.
+
+```
+cartograph/
+├── PLAN.md                      # this file
+├── README.md                    # demo gif, architecture diagram, eval table, cost chart
+├── docker-compose.yml           # api, worker, postgres(pgvector)
+├── backend/
+│   ├── pyproject.toml           # uv-managed
+│   ├── app/
+│   │   ├── main.py              # FastAPI app, lifespan, routers
+│   │   ├── config.py            # pydantic-settings; model IDs/keys/budgets live here
+│   │   ├── api/
+│   │   │   ├── repos.py         # POST /repos, GET /repos/{id}, repo status
+│   │   │   ├── questions.py     # POST /repos/{id}/questions
+│   │   │   ├── graph.py         # GET graph slices for the UI
+│   │   │   └── ws.py            # /ws/runs/{run_id} event stream
+│   │   ├── indexer/
+│   │   │   ├── cloner.py        # sandboxed shallow clone
+│   │   │   ├── parser/          # tree-sitter wrappers, per-language extractors
+│   │   │   │   ├── python.py
+│   │   │   │   └── typescript.py
+│   │   │   ├── graph_builder.py # nodes/edges → Postgres
+│   │   │   ├── communities.py   # leiden + hierarchy
+│   │   │   ├── summarizer.py    # batched Flash summaries, bottom-up
+│   │   │   └── incremental.py   # diff-based re-index (§9)
+│   │   ├── agents/
+│   │   │   ├── llm.py           # ALL Gemini calls: client, retry, JSON-mode helper,
+│   │   │   │                    #   token/cost accounting, model registry
+│   │   │   ├── graph_def.py     # LangGraph topology (supervisor pattern)
+│   │   │   ├── planner.py
+│   │   │   ├── explorer.py
+│   │   │   ├── synthesizer.py
+│   │   │   ├── critic.py
+│   │   │   ├── librarian.py     # graph write-back
+│   │   │   ├── tools.py         # read_file, get_neighbors, search_graph, grep
+│   │   │   └── schemas.py       # Pydantic models for every inter-agent payload
+│   │   ├── query/
+│   │   │   ├── router.py        # local | global | escalate classifier
+│   │   │   ├── retrieval.py     # BM25 + dense + graph expansion + fusion
+│   │   │   ├── answerer.py      # per-route synthesis
+│   │   │   ├── verifier.py      # citation verification
+│   │   │   └── escalation.py    # scoped live explorer + write-back
+│   │   ├── events.py            # event bus: agent_events table + WS fanout
+│   │   └── db/                  # SQLAlchemy models, alembic migrations
+│   └── tests/
+├── evals/
+│   ├── datasets/                # golden Q&A per repo (yaml)
+│   ├── run_evals.py
+│   └── results/                 # committed score history (jsonl)
+└── frontend/                    # Next.js (see §6)
+```
+
+### 4.2 Gemini integration (`agents/llm.py`)
+
+All model access goes through one module. Rules:
+
+- **SDK:** `google-genai` (the current unified SDK — not the deprecated
+  `google-generativeai`). LangGraph agents use `langchain-google-genai` bindings,
+  which sit on the same credentials/config.
+- **Model registry in config, not in code.** Two logical tiers used throughout:
+  `MODEL_REASONING` (planner/synthesizer/critic — Gemini Pro tier) and `MODEL_FAST`
+  (explorers/summaries/router — Gemini Flash tier), plus `MODEL_EMBEDDING`.
+  Exact model IDs are config values — **verify current Gemini model IDs and pricing
+  at implementation time** and record them in `config.py` with a dated comment;
+  do not hardcode IDs from memory across the codebase.
+- **Structured output everywhere:** every call that feeds another component uses
+  Gemini JSON mode with a `response_schema` derived from the Pydantic models in
+  `schemas.py`, validated on receipt; one retry-with-error-named on validation
+  failure.
+- **Context caching:** Gemini context caching for the large stable prefixes
+  (repo skeleton given to every explorer; community summaries given to the global
+  answerer). Measure hit rates; this is part of the cost story.
+- **Accounting:** every call records `(model, input_tokens, output_tokens, cost,
+  purpose, run_id)` → `index_runs.token_usage` / `questions.cost_usd`. The cost
+  chart in the README is generated from this table, not estimated.
+- **Resilience:** exponential backoff on 429/5xx, per-run circuit breaker, global
+  concurrency limiter (explorers run parallel but bounded, e.g. 6 concurrent).
+
+### 4.3 API surface
+
+```
+POST   /api/repos                      {url}            → {repo_id, run_id}   (idempotent per URL+commit)
+GET    /api/repos/{id}                                  → status, stats, cost
+POST   /api/repos/{id}/reindex                          → incremental update run
+GET    /api/repos/{id}/graph?level=&community=&node=    → UI graph slices (paginated)
+GET    /api/repos/{id}/walkthrough                      → generated onboarding doc
+POST   /api/repos/{id}/questions       {text}           → streamed answer (SSE) + citations + route + cost
+GET    /api/repos/{id}/questions                        → history
+WS     /ws/runs/{run_id}                                → agent event stream (mission control)
+GET    /api/evals/latest                                → published eval scores (powers README badge)
+```
+
+WebSocket event envelope (one schema, every agent event):
+
+```json
+{"ts": "...", "run_id": "...", "agent": "explorer_3", "type": "tool_call",
+ "payload": {"tool": "read_file", "args": {"path": "src/auth/jwt.py"}},
+ "seq": 1042}
+```
+
+`seq` enables reconnect-and-replay from the `agent_events` table — the UI never
+misses events on a dropped connection.
+
+---
+
+## 5. Frontend Design (Next.js + Tailwind)
+
+Three views. The bar: *the screen-recording of mission control should be inherently
+share-worthy.* Polish budget is concentrated here (and the installed design skills —
+`impeccable` / `taste-skill` — get applied during week 3).
+
+### 5.1 Mission Control (index-time)
+
+- Left: live agent roster — planner/explorers/synthesizer/critic as cards with
+  state (thinking / tool call / done), current activity line, token spend ticking up.
+- Center: the repo file-tree / graph progressively "lighting up" as territory is
+  explored — claimed regions colored per explorer.
+- Right: scrolling verified-findings feed; critic rejections shown distinctly
+  (this is the moment that demonstrates the verification loop on camera).
+- Bottom: run totals — elapsed, tokens, **live cost counter** (the cost counter is
+  a deliberate flex).
+
+### 5.2 Atlas (the architecture map)
+
+- Force-directed graph (Sigma.js or react-force-graph; WebGL — must stay smooth at
+  ~5k nodes) with **semantic zoom**: communities at far zoom → files → symbols.
+- Click a node: summary, annotations (with source attribution + verified badge),
+  metrics, edges; "ask about this" pre-fills chat.
+- Edge-type and confidence filters; "show the auth flow"-style saved subgraph views
+  generated by the synthesizer.
+- Generated **onboarding walkthrough** as an ordered overlay: step 1..N highlight
+  path through the graph with prose.
+
+### 5.3 Chat (query-time)
+
+- Answers stream token-by-token; citations render as `path:line` chips → click opens
+  a code panel scrolled to the exact lines, with the verified-quote highlighted.
+- Per-answer transparency strip: route taken (local/global/escalated), cost, latency,
+  subgraph used (mini-map that highlights the consulted nodes in the Atlas).
+- Escalations show inline mini-mission-control (the spawned agent's activity) and
+  end with "✦ graph updated — this answer is cheaper next time."
+
+---
+
+## 6. The Eval Harness (`evals/`)
+
+This is a first-class deliverable, not an afterthought — it's the strongest
+credibility signal in the repo.
+
+- **Datasets:** 25–40 golden Q&A per repo for 3–4 well-known repos (candidates:
+  `fastapi`, `httpx`, `flask`, `excalidraw` for the TS side). Each item:
+  `{question, route_expected, must_cite: [path(:line-range)...], rubric}`.
+  Hand-authored against the pinned commit; pinned commits committed with the dataset.
+- **Metrics:**
+  - **Citation precision/recall** — mechanically checkable, the headline number.
+  - **Route accuracy** (router picked the expected tier).
+  - **Answer quality** — LLM-as-judge against rubric, using a judge model *different
+    from the answering model*, with the judge prompt published. Spot-check 20% by hand.
+  - **Cost & latency** per question, split by route — feeds the README cost chart.
+- **Regression discipline:** `python evals/run_evals.py` runs the suite against a
+  local stack; results append to `evals/results/history.jsonl` (committed). CI runs
+  a 10-question smoke subset on PRs. README table is generated from latest results.
+- **Negative tests:** questions whose answer is *not in the repo* — measures refusal
+  quality ("I can't find this") vs hallucination. Hallucination rate is reported.
+
+---
+
+## 7. Cost & Latency Engineering (the economics chapter)
+
+Targets (to validate in week 1–2, then publish as measured):
+
+| Operation | Target cost | Target latency |
+|---|---|---|
+| Index 1,500-file repo (full) | < $1.00 | < 3 min |
+| Local question | < $0.01 | < 3 s |
+| Global question | < $0.02 | < 5 s |
+| Escalated question | < $0.15 | < 60 s |
+| Incremental re-index (typical commit) | < $0.05 | < 30 s |
+
+Levers, in order of leverage:
+
+1. **Static-first graph** — the single biggest saving; the LLM never reads the repo
+   "to find out what's there."
+2. **Tiered models** — Flash for volume (summaries, explorers, router), Pro only for
+   planning/synthesis/criticism.
+3. **Persisted graph + write-back** — repeat and similar questions never re-explore.
+4. **Bottom-up summaries** — prompts stay small; invalidation stays local.
+5. **Context caching** on stable prefixes (skeleton, community summaries).
+6. **Batching** symbol summaries (many symbols per call with structured output).
+7. **Semantic answer cache** — embed questions; near-duplicate (cosine > threshold)
+   against a *verified* prior answer on the same commit → serve cached, marked as such.
+
+Every README cost number is generated from real accounting data (§4.2), with the
+measurement date.
+
+---
+
+## 8. Incremental Updates & Staleness (§the part everyone skips)
+
+The graph is keyed to a commit. On re-index request (manual button in v1; webhook
+support is a v2 item):
+
+1. `git fetch` + diff `old_commit..new_commit` → changed file set.
+2. Re-parse only changed files; diff symbol sets by `content_hash` →
+   add/update/remove nodes and incident edges.
+3. Invalidate: summaries of changed nodes; mark containing communities `dirty`
+   (and parents transitively). Re-run Leiden **only if** the structural change is
+   large (> X% nodes/edges changed — else keep memberships, refresh summaries).
+4. Re-summarize dirty nodes/communities bottom-up. Annotations on changed nodes are
+   demoted to `unverified` (cheap critic pass re-verifies the affected ones).
+5. Answers cached against the old commit are not served for the new one.
+
+UI always shows the indexed commit + "graph is N commits behind" badge.
+
+---
+
+## 9. Security & Safety
+
+Cloning and parsing **arbitrary repos** is the main risk surface:
+
+- Clone into an isolated workspace; **size caps** (repo size, file count, file size),
+  depth-1 clone, no submodule recursion, no git hooks (`--no-checkout` + explicit
+  checkout, `core.hooksPath=/dev/null`).
+- **We never execute repo code.** tree-sitter parses bytes; that invariant is stated
+  in the README.
+- Worker runs in a container with no secrets beyond its own DB/Gemini creds;
+  workspace on a quota'd volume; cleanup after indexing.
+- **Prompt-injection awareness:** repo content (READMEs, docstrings, code comments)
+  is untrusted input to the agents. Mitigations: agents' instructions delimit repo
+  content as data; the critic verifies claims against code (not comments); tools are
+  read-only by construction; findings that cite no code are rejected. Documented
+  honestly in the writeup as mitigated-not-solved — that honesty is itself a
+  credibility signal.
+- Rate limiting on `POST /repos` (it triggers paid work); allowlist of git hosts
+  (github.com in v1); per-run hard budget cap with graceful abort.
+
+---
+
+## 10. Tech Stack Summary
+
+| Layer | Choice | Why (one line for the writeup) |
+|---|---|---|
+| Language | Python 3.12 (uv) | Ecosystem for tree-sitter, LangGraph, igraph |
+| API | FastAPI + Uvicorn | Async, WebSockets, Pydantic-native |
+| Orchestration | LangGraph | Industry-recognizable supervisor pattern; checkpointing for run replay |
+| LLM | Gemini via `google-genai` (+ `langchain-google-genai` inside LangGraph) | Two-tier Pro/Flash economics, JSON mode, context caching, long context |
+| Parsing | tree-sitter (python, typescript grammars) | Incremental, language-extensible, no code execution |
+| Graph algorithms | NetworkX + igraph/leidenalg | In-process; Leiden for communities; defer graph DB |
+| Storage | Postgres 16 + pgvector | One database for relational + vector + full-text (BM25-ish via tsvector) |
+| Queue | Postgres-backed job table + worker process (e.g. `arq`/custom) | One less moving part than Redis/Celery for v1 |
+| Frontend | Next.js 15, TypeScript, Tailwind, shadcn/ui | Speed + polish |
+| Graph viz | Sigma.js (WebGL) or react-force-graph | Smooth at 5k nodes |
+| Realtime | Native WebSocket (FastAPI) + SSE for answer streaming | No extra infra |
+| Deploy | docker-compose; single VM or Railway/Fly | Cheap, reproducible; live demo URL |
+| CI | GitHub Actions: lint (ruff), typecheck (mypy/pyright), tests, eval smoke subset | The eval-in-CI is the differentiator |
+
+---
+
+## 11. Four-Week Roadmap
+
+Each week ends in something demoable. Cut scope, never quality of what ships.
+
+### Week 1 — The spine (static graph + local Q&A)
+- Repo scaffolding, docker-compose, CI skeleton.
+- Cloner + tree-sitter extraction (Python first) → nodes/edges in Postgres.
+- Batched Flash node summaries + embeddings; hybrid retrieval (BM25 + dense + 1-hop).
+- Minimal local-route Q&A with **citation verification from day one**.
+- Ugly-but-real CLI/REST demo; first cost measurements logged.
+- **Milestone:** ask `fastapi` "where are dependency overrides handled?" → correct,
+  verified citation.
+
+### Week 2 — The fleet (multi-agent enrichment + GraphRAG)
+- LangGraph topology: planner → parallel explorers → synthesizer → critic → librarian.
+- Agent tools, structured findings, write-back, run budgets, event log.
+- Leiden communities + hierarchical summaries; global route; router; escalation route
+  with write-back.
+- TypeScript grammar support.
+- **Milestone:** full index run of `fastapi` end-to-end with event log; global question
+  answered from community summaries; measured index cost.
+
+### Week 3 — The face (UI)
+- Next.js app: Mission Control (live WS events), Atlas (semantic-zoom graph), Chat
+  (streamed answers, citation chips → code panel, transparency strip).
+- Onboarding walkthrough generation + overlay.
+- Design pass with the installed design skills; dark theme; the screen-recordable demo.
+- **Milestone:** the 2-minute demo recording exists.
+
+### Week 4 — The proof (evals, hardening, launch)
+- Eval datasets (3 repos), full harness, results history, CI smoke subset, README
+  table + cost chart from real data.
+- Incremental re-index; security hardening checklist (§9); rate limits/budget caps.
+- Deploy live demo with 3 pre-indexed repos + "index your own" (budget-capped).
+- **Writeup** (the actual portfolio artifact): architecture decisions, the
+  static-graph insight, the cost economics, the critic/verification design,
+  what didn't work. Publish: GitHub README, blog post, Show HN / r/MachineLearning,
+  LinkedIn, X thread with the demo video.
+- **Milestone:** public URL + repo + writeup + video.
+
+### Explicit cut-line (if behind schedule)
+Cut in this order: TypeScript support → onboarding walkthrough overlay → semantic
+answer cache → incremental re-index (ship "re-index = full re-run" with the design
+documented). **Never cut:** citation verification, the critic, evals, mission control.
+
+---
+
+## 12. Risks & Mitigations
+
+| Risk | Likelihood | Mitigation |
+|---|---|---|
+| Static call-graph accuracy in dynamic Python (decorators, DI, dynamic dispatch) | High | Confidence-scored edges; explorers verify/annotate hot paths; never present low-confidence edges as fact in answers |
+| Multi-agent indexing cost blows the < $1 target on big repos | Medium | Hard budgets; explorer count scales with repo size; degrade to "static + summaries only" mode above thresholds, clearly labeled |
+| Force-graph UI chokes on large repos | Medium | Semantic zoom = render communities not nodes at distance; cap rendered nodes; WebGL renderer |
+| Gemini JSON-mode drift / schema violations breaking agent pipeline | Medium | Pydantic validation + single retry-with-error; dead-letter findings logged, run continues without them |
+| LLM-judge eval unconvincing to skeptics | Medium | Lead with mechanical citation precision/recall; publish judge prompts; hand-audited sample |
+| "Another codebase-chat tool" dismissal | Medium | Branding + demo lead with *watch agents map*, the verification loop, and the economics — not the chat |
+| Prompt injection via repo content | Low-Med | §9 mitigations; documented honestly |
+| Scope creep (it's a fun project) | High | This plan's non-goals + cut-line are the contract; weekly milestone check against §11 |
+
+---
+
+## 13. Success Criteria
+
+**Portfolio (primary):**
+- A 2-minute demo that an AI engineer finds technically impressive without explanation.
+- README with architecture diagram, real eval table, real cost chart — readable in 3 minutes.
+- A writeup whose architecture decisions can carry a 45-minute interview conversation.
+- Stretch: 200+ GitHub stars / front-page Show HN — distribution proof for clients.
+
+**Product:**
+- Citation precision ≥ 0.9 on the eval suite; hallucinated-citation rate shown ~0
+  *post-verification* (the verifier makes this true by construction — report the
+  pre-verification rate too, honestly).
+- Cost targets in §7 met and published.
+- A stranger can index their own mid-size repo unassisted and get value in < 5 minutes.
+
+---
+
+## 14. v2 Backlog (explicitly deferred)
+
+GitHub webhook auto-reindex · PR-diff explanation mode ("what does this PR actually
+change, architecturally?") · more languages (Go, Java, Rust) · cross-repo graphs ·
+team memory (per-org annotation layers) · MCP server exposing the graph as tools to
+other agents (strong ecosystem play — Cartograph becomes infrastructure) · VS Code
+extension · auth/billing if it grows beyond portfolio.
