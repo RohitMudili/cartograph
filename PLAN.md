@@ -382,6 +382,10 @@ misses events on a dropped connection.
 
 ## 5. Frontend Design (Next.js + Tailwind)
 
+> **Superseded by [`FRONTEND.md`](FRONTEND.md)** — the full frontend plan
+> (design system in [`DESIGN.md`](DESIGN.md), strategy in
+> [`PRODUCT.md`](PRODUCT.md)). This section remains as the original summary.
+
 Three views. The bar: *the screen-recording of mission control should be inherently
 share-worthy.* Polish budget is concentrated here (and the installed design skills —
 `impeccable` / `taste-skill` — get applied during week 3).
