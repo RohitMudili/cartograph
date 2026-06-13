@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+dist/
+build/
+
+# Environment / secrets
+.env
+.env.local
+*.key
+
+# Cartograph runtime
+/workspaces/          # cloned repos (sandboxed clone target)
+/data/                # local volumes, exports
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Node / frontend (added in the frontend phase)
+node_modules/
+.next/
+out/

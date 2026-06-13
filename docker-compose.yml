@@ -1,0 +1,48 @@
+# Local dev stack: Postgres (with pgvector) + the API.
+# Usage:
+#   cp backend/.env.example backend/.env   # then add your GEMINI_API_KEY
+#   docker compose up --build
+#
+# The api service waits for Postgres to be healthy, runs migrations, then serves.
+
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: cartograph
+      POSTGRES_PASSWORD: cartograph
+      POSTGRES_DB: cartograph
+    ports:
+      # Host port is configurable to avoid clashing with a local Postgres.
+      # The api service talks to the DB over the compose network, not this port.
+      - "${DB_HOST_PORT:-5433}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cartograph -d cartograph"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    env_file:
+      - ./backend/.env
+    environment:
+      # Override host inside the compose network (the .env default targets localhost).
+      DATABASE_URL: postgresql+asyncpg://cartograph:cartograph@db:5432/cartograph
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    # Apply migrations, then serve. `exec` so uvicorn is PID 1 and receives signals.
+    command: >
+      sh -c "alembic upgrade head &&
+             exec uvicorn app.main:app --host 0.0.0.0 --port 8000"
+
+volumes:
+  pgdata:
