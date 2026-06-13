@@ -40,4 +40,10 @@ jobs:
         run: uv run pyright
 
       - name: Test (pytest)
-        run: uv run pytest --cov=app --cov-report=term-missing
+        run: uv run pytest -m "not network" --cov=app --cov-report=term-missing
+
+      # Network tests (live git clone) run separately and don't fail the build on
+      # a transient network/host issue — they're coverage, not a gate.
+      - name: Network tests (non-blocking)
+        continue-on-error: true
+        run: uv run pytest -m "network" -v

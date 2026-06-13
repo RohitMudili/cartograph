@@ -67,9 +67,7 @@ def _validate_url(url: str, settings: Settings) -> None:
         )
 
 
-async def _run_git(
-    *args: str, cwd: Path | None = None, timeout_s: int
-) -> tuple[int, str, str]:
+async def _run_git(*args: str, cwd: Path | None = None, timeout_s: int) -> tuple[int, str, str]:
     """Run a git command with a hard timeout, returning (rc, stdout, stderr)."""
     proc = await asyncio.create_subprocess_exec(
         "git",
@@ -190,9 +188,12 @@ async def clone_repo(
         # rglob over the whole tree is blocking — run it off the event loop.
         file_count, size_bytes = await asyncio.to_thread(_measure_workspace, workspace, settings)
         head_commit = (await _run_git("rev-parse", "HEAD", cwd=workspace, timeout_s=30))[1].strip()
-        resolved_branch = branch or (
-            await _run_git("rev-parse", "--abbrev-ref", "HEAD", cwd=workspace, timeout_s=30)
-        )[1].strip()
+        resolved_branch = (
+            branch
+            or (await _run_git("rev-parse", "--abbrev-ref", "HEAD", cwd=workspace, timeout_s=30))[
+                1
+            ].strip()
+        )
     except CloneError:
         await asyncio.to_thread(cleanup_workspace, workspace)
         raise
