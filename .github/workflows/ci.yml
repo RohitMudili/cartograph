@@ -16,6 +16,24 @@ jobs:
     defaults:
       run:
         working-directory: backend
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: cartograph
+          POSTGRES_PASSWORD: cartograph
+          POSTGRES_DB: cartograph
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U cartograph -d cartograph"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      # CI Postgres is on the standard 5432; tests/migrations read these.
+      DATABASE_URL: postgresql+asyncpg://cartograph:cartograph@localhost:5432/cartograph
+      TEST_DATABASE_URL: postgresql+asyncpg://cartograph:cartograph@localhost:5432/cartograph
     steps:
       - uses: actions/checkout@v4
 
@@ -38,6 +56,9 @@ jobs:
 
       - name: Type check (pyright)
         run: uv run pyright
+
+      - name: Apply migrations
+        run: uv run alembic upgrade head
 
       - name: Test (pytest)
         run: uv run pytest -m "not network" --cov=app --cov-report=term-missing
