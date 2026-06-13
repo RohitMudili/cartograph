@@ -76,6 +76,9 @@ venv = ".venv"
 asyncio_mode = "auto"
 testpaths = ["tests"]
 addopts = "-q"
+markers = [
+    "network: tests that require network access (live git clone, API calls)",
+]
 
 [tool.coverage.run]
 source = ["app"]

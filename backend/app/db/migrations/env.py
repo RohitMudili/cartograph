@@ -16,11 +16,11 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 from sqlalchemy.pool import NullPool
 
+# Importing the models module registers every ORM table on Base.metadata so
+# Alembic autogenerate can see them.
+import app.db.models  # noqa: F401
 from app.config import get_settings
 from app.db.base import Base
-
-# Phase 2: import the models module here (with a noqa for F401) so the ORM
-# tables register on Base.metadata and autogenerate can see them.
 
 config = context.config
 if config.config_file_name is not None:
