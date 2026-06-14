@@ -46,6 +46,15 @@ class CloneError(Exception):
     """Raised when a repo cannot be safely or successfully cloned."""
 
 
+class PrivateRepoError(CloneError):
+    """The repo is private/not found anonymously — authentication is required.
+
+    Distinct from a generic CloneError so the API can prompt the user to connect
+    GitHub (see PLAN.md §9A) instead of returning an opaque failure. Until the
+    OAuth flow lands, this is the honest signal for any auth-requiring repo.
+    """
+
+
 @dataclass(frozen=True, slots=True)
 class CloneResult:
     workspace: Path
@@ -69,12 +78,22 @@ def _validate_url(url: str, settings: Settings) -> None:
 
 async def _run_git(*args: str, cwd: Path | None = None, timeout_s: int) -> tuple[int, str, str]:
     """Run a git command with a hard timeout, returning (rc, stdout, stderr)."""
+    # Disable interactive credential prompts: a private repo must FAIL FAST with
+    # an auth error, not hang waiting for a username until the timeout. Both vars
+    # are belt-and-suspenders (GIT_TERMINAL_PROMPT covers git's own prompt;
+    # GCM_INTERACTIVE=never stops the Git Credential Manager popping a GUI).
+    env = {
+        **os.environ,
+        "GIT_TERMINAL_PROMPT": "0",
+        "GCM_INTERACTIVE": "never",
+    }
     proc = await asyncio.create_subprocess_exec(
         "git",
         *args,
         cwd=str(cwd) if cwd else None,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
+        env=env,
     )
     try:
         async with asyncio.timeout(timeout_s):
@@ -182,6 +201,27 @@ async def clone_repo(
     rc, _out, err = await _run_git(*clone_args, timeout_s=CLONE_TIMEOUT_SECONDS)
     if rc != 0:
         await asyncio.to_thread(cleanup_workspace, workspace)
+        # Classify: an anonymous clone of a private (or nonexistent) repo fails
+        # with an auth/not-found message. Surface it as PrivateRepoError so the
+        # API can prompt the user to connect GitHub (PLAN.md §9A), rather than
+        # returning an opaque "clone failed".
+        low = err.lower()
+        if any(
+            sig in low
+            for sig in (
+                "authentication failed",
+                "could not read username",
+                "terminal prompts disabled",
+                "repository not found",
+                "fatal: could not read",
+                "403",
+                "404",
+            )
+        ):
+            raise PrivateRepoError(
+                "This repository is private or could not be found anonymously. "
+                "Connect GitHub to index private repositories."
+            )
         raise CloneError(f"git clone failed: {err.strip()[:500]}")
 
     try:

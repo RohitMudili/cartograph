@@ -517,6 +517,102 @@ Cloning and parsing **arbitrary repos** is the main risk surface:
 
 ---
 
+## 9A. Private & Org Repository Access
+
+Most repositories worth onboarding onto are **private**, so authenticated cloning
+is in scope, not a v2 nicety. The public-only cloner shipped in Phase 2 is the
+anonymous path; this section specifies the authenticated path layered on top of
+it.
+
+### Mechanism: GitHub OAuth App (v1)
+
+Users connect their GitHub account via OAuth. Cartograph acts **on the user's
+behalf** with a scoped token — the standard model for this product category
+(Greptile, Cursor). GitHub App / installation tokens are a documented v2 upgrade
+(stronger for enterprise; see §14).
+
+**Flow:**
+
+```
+1. User clicks "Connect GitHub" → redirect to github.com OAuth authorize
+   (scopes: repo read; read:org for org membership/visibility).
+2. Callback → exchange code for an access token (+ refresh token if available).
+3. List repos the user can read (their own + org repos their account reaches),
+   including private ones → user picks one.
+4. Index using the token for the clone; the graph persists, and the token is
+   stored encrypted for later re-indexing (see Token handling).
+```
+
+### Org-owned private repos
+
+**The user's own access is the authorization.** If the connecting account can read
+the org repo, Cartograph can index it on their behalf — no separate per-repo org
+step beyond GitHub's own OAuth-app policy.
+
+**The one real-world wrinkle:** some orgs **block third-party OAuth apps** at the
+org level. In that case GitHub simply makes the org's repos invisible to the
+token — a clone/list returns 404, not a clear "denied". We detect this (repo
+not visible despite a valid token) and surface an actionable message:
+
+> "Cartograph can't see this org's repositories. Your org may restrict
+> third-party OAuth apps — an org owner can approve Cartograph at
+> `github.com/organizations/<org>/settings/oauth_application_policy`, or grant
+> access on request."
+
+So the access path is: **try the user's own access first; on org-policy block,
+guide them to admin approval.** No silent failures.
+
+### Token handling — encrypted at rest
+
+Tokens are stored **encrypted at rest** so re-indexing on new commits doesn't
+force re-auth (it enables the "watch for changes" feature). This is a deliberate
+stored-secret surface and carries obligations:
+
+- **Encryption:** authenticated symmetric encryption (Fernet / AES-GCM) with a
+  key from the environment/KMS — **never** in the DB or repo. The DB stores only
+  ciphertext.
+- **Scope & least privilege:** request the narrowest scopes that work (repo
+  read). Per-user tokens, never shared.
+- **Revocation & expiry:** store token metadata (scopes, expiry, github login);
+  support user-initiated disconnect that deletes the stored token and (best
+  effort) revokes it via GitHub. Refresh-token rotation where GitHub provides it.
+- **Never logged, never echoed.** Tokens are redacted from logs/errors; API
+  responses never return them. Clone uses the token via an in-memory credential
+  helper / URL injection, never written to the workspace `.git/config`.
+- **Blast radius:** a token grants read to repos the user can read — documented
+  honestly. Compromise of the encryption key is the worst case; key custody is
+  the critical control (rotate on suspicion, KMS in production).
+
+### Data model additions
+
+```sql
+github_identities (id, user_id, github_login, access_token_ciphertext,
+                   refresh_token_ciphertext, scopes, token_expires_at,
+                   created_at, updated_at)
+-- repos gains: owner_identity_id (nullable FK — null = anonymous/public clone),
+--              visibility ('public'|'private')
+```
+
+### Cloner changes
+
+The Phase 2 cloner already routes git over HTTPS with all safety flags. Auth adds:
+inject the token as an HTTP extra-header credential (`http.extraHeader`
+`Authorization: Bearer …` via `-c`, not in the URL — keeps it out of process
+listings and `.git/config`); on failure, distinguish **404/not-found** (private
+or nonexistent — prompt auth) from **403/blocked** (org policy) from a genuine
+clone error, so the API returns the right guidance. The `protocol.file.allow` and
+hooks guards are unchanged.
+
+### Build placement
+
+This is a **dedicated phase after the Week-1 spine** (it needs the frontend's
+"Connect GitHub" affordance and is orthogonal to the indexing/Q&A core). It does
+**not** block the Week-1 milestone, which proves the pipeline on public repos.
+Until it lands, `POST /api/repos` on a private repo returns a clear "this repo is
+private — connect GitHub to index it" 403, not a cryptic clone failure.
+
+---
+
 ## 10. Tech Stack Summary
 
 | Layer | Choice | Why (one line for the writeup) |

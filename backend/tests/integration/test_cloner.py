@@ -10,7 +10,13 @@ from __future__ import annotations
 import pytest
 
 from app.config import Settings
-from app.indexer.cloner import CloneError, _validate_url, cleanup_workspace, clone_repo
+from app.indexer.cloner import (
+    CloneError,
+    PrivateRepoError,
+    _validate_url,
+    cleanup_workspace,
+    clone_repo,
+)
 
 
 def test_rejects_non_allowlisted_host() -> None:
@@ -47,3 +53,16 @@ async def test_clone_small_repo() -> None:
     finally:
         cleanup_workspace(result.workspace)
         assert not result.workspace.exists()
+
+
+@pytest.mark.network
+async def test_private_repo_fails_fast_with_guidance() -> None:
+    """A private/nonexistent repo must raise PrivateRepoError quickly (not hang
+    on a credential prompt) so the API can prompt the user to connect GitHub."""
+    settings = Settings(allowed_git_hosts="github.com")
+    with pytest.raises(PrivateRepoError, match=r"[Cc]onnect GitHub"):
+        await clone_repo(
+            "https://github.com/paygraph-ai/this-repo-does-not-exist-xyz",
+            workspace_id="test-private-nonexistent",
+            settings=settings,
+        )
