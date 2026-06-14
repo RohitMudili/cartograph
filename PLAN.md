@@ -42,24 +42,42 @@ Cartograph turns that into a two-minute experience:
 
 ### 1.2 Why this project (positioning)
 
-"Chat with your codebase" exists (Cursor, Copilot, Greptile). Cartograph's
-differentiation — and the things that signal engineering depth — are:
+> **Market reality (June 2026, see PRODUCT.md → Competitive Landscape):** this
+> space is validated and active. **Greptile** (funded) and **Sourcegraph Cody**
+> own the "understand your codebase" value prop; **GitNexus** (open source, Aug
+> 2025) independently shipped almost our exact tree-sitter → code-knowledge-graph
+> architecture, including cluster detection and incremental reindex. So the graph,
+> the chat, and even cheap GraphRAG-for-code are **commodity** — do not pitch them
+> as novel. What follows is honestly scoped against that.
 
-- **Visible multi-agent exploration**, not a hidden RAG pipeline. The supervisor →
-  parallel explorers → synthesizer → critic topology is *structurally justified* by
-  the problem (codebases genuinely partition into independently explorable subsystems),
-  not decorative.
-- **GraphRAG built the cheap way.** For code, the entity/relation graph is derivable
-  statically (tree-sitter + import/call resolution) — the LLM is only needed for the
-  semantic layer (summaries). Classic document-GraphRAG burns tokens extracting
-  entities; we get ours for free. This insight is a centerpiece of the technical
-  writeup.
-- **Verified citations.** Every `file:line` claim is checked against the real file
-  before display. Hallucinated citations are caught and regenerated.
-- **Published evals.** A real `evals/` directory with golden Q&A sets for well-known
-  repos and a citation-accuracy scoreboard in the README.
-- **An honest cost story.** "First question: ~$0.50 and 90s. Every question after:
-  ~$0.01 and 3s" — with the architecture that makes it true.
+"Chat with your codebase" exists (Cursor, Copilot, Greptile, GitNexus). The parts
+of Cartograph that are still genuinely differentiated — and that signal engineering
+depth for a portfolio — are:
+
+- **Watch agents explore as the product** (the real edge). Competitors hide
+  indexing behind a progress bar; Cartograph makes the live, beautiful
+  multi-agent exploration — *with the verification loop visible on screen* — the
+  centerpiece. The supervisor → parallel explorers → synthesizer → critic topology
+  is structurally justified (codebases partition into independently explorable
+  subsystems), and rendering it live is the hardest thing for a competitor to copy.
+- **Adversarially verified citations with PUBLISHED evals** (the credibility moat).
+  Every `file:line` claim is checked against the real file before display;
+  hallucinated citations are caught and regenerated. A real `evals/` directory with
+  golden Q&A and a **citation-accuracy precision/recall scoreboard in the README** —
+  which no competitor publishes — is the strongest depth signal in the repo.
+- **Standalone "paste a URL, watch it happen" web experience.** GitNexus is an MCP
+  server for your editor; Greptile/Cody are platforms. The instant, zero-setup,
+  visual "watch a stranger's repo get mapped in 2 minutes" is its own distinct thing.
+- **Supporting (not headline) engineering rigor:** the static-graph-first design
+  keeps indexing cheap (LLM only for the semantic layer), giving an honest cost
+  story — "first question ~$0.50/90s, every one after ~$0.01/3s." This is sound
+  engineering, **not a novel insight** (GitNexus does the same); present it as
+  craft, not breakthrough.
+
+**Writeup framing:** *"how I'd architect this class of system, with the rigor —
+evals, adversarial verification, cost accounting — that shipped products skip."*
+A crowded market validates the problem; the goal is demonstrating depth, not
+winning share against a funded startup.
 
 ### 1.3 Non-goals (v1)
 
