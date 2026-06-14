@@ -24,12 +24,15 @@ import structlog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.agents.llm import UsageLedger
+from app.config import get_settings
 from app.db.enums import RepoStatus, RunStatus
 from app.db.models import IndexRun, Repo
 from app.indexer.cloner import CloneError, cleanup_workspace, clone_repo
 from app.indexer.graph_builder import BuildStats, GraphBuilder
 from app.indexer.parser.python import extract_python
 from app.indexer.parser.types import FileExtract
+from app.indexer.summarizer import Summarizer
 
 log = structlog.get_logger(__name__)
 
@@ -137,6 +140,18 @@ async def index_repo(session: AsyncSession, url: str, *, branch: str | None = No
 
         stats = await build_graph_from_workspace(session, repo.id, workspace)
 
+        # Phase 3: semantic layer (summaries + embeddings). Skipped cleanly when
+        # no LLM key is configured — the static graph above is fully usable on
+        # its own; enrichment just doesn't run.
+        ledger = UsageLedger()
+        summary_stats = None
+        if get_settings().llm_available:
+            repo.status = RepoStatus.SUMMARIZING
+            await session.flush()
+            summary_stats = await Summarizer(session, repo.id, ledger=ledger).run()
+        else:
+            log.info("index.summaries_skipped", repo_id=str(repo.id), reason="no_llm_key")
+
         repo.status = RepoStatus.INDEXED
         repo.indexed_at = dt.datetime.now(dt.UTC)
         repo.stats = {
@@ -146,7 +161,11 @@ async def index_repo(session: AsyncSession, url: str, *, branch: str | None = No
             "edges": stats.edges,
             "chunks": stats.chunks,
             "size_bytes": clone.size_bytes,
+            "summarized": summary_stats.summarized if summary_stats else 0,
         }
+        # Token counts recorded; cost (usd) is filled from LangSmith when enabled.
+        run.token_usage = ledger.summary()
+        run.cost_usd = ledger.total_usd or 0.0
         run.status = RunStatus.SUCCEEDED
         run.finished_at = dt.datetime.now(dt.UTC)
         await session.flush()

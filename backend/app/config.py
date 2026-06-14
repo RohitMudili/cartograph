@@ -82,6 +82,26 @@ class Settings(BaseSettings):
     openai_api_key: str = Field(default="")
     anthropic_api_key: str = Field(default="")
 
+    @property
+    def llm_available(self) -> bool:
+        """True if a key is configured for the providers the chosen models need.
+
+        Used to gate the semantic layer (summaries/embeddings): without a key, the
+        static graph still indexes fully — the LLM enrichment is simply skipped.
+        """
+        providers = {
+            self.reasoning_model.split(":", 1)[0],
+            self.fast_model.split(":", 1)[0],
+            self.embedding_model.split(":", 1)[0],
+        }
+        key_for = {
+            "google_genai": self.google_api_key,
+            "openai": self.openai_api_key,
+            "anthropic": self.anthropic_api_key,
+        }
+        # Every provider the models reference must have a key.
+        return all(key_for.get(p) for p in providers if p in key_for)
+
     # ── LangSmith (tracing + cost computation; opt-in, off by default) ──
     # When tracing is on, LangChain auto-traces every model call to LangSmith,
     # which computes cost. We read run.total_cost back into our DB. With it off,

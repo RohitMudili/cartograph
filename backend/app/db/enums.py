@@ -34,6 +34,7 @@ class RepoStatus(StrEnum):
     PENDING = "pending"
     CLONING = "cloning"
     PARSING = "parsing"
+    SUMMARIZING = "summarizing"
     INDEXED = "indexed"
     FAILED = "failed"
 
