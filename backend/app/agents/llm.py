@@ -19,7 +19,9 @@ Responsibilities centralized here:
 
 from __future__ import annotations
 
+import asyncio
 import os
+import time
 from dataclasses import dataclass, field
 from functools import lru_cache
 from typing import TypeVar
@@ -45,6 +47,45 @@ from app.config import (
 )
 
 log = structlog.get_logger(__name__)
+
+
+class _RateLimiter:
+    """Async token-bucket limiter shared across all LLM calls.
+
+    Paces requests to `rpm` requests/minute regardless of how many coroutines
+    fan out concurrently, so we never exceed the provider tier's rate limit and
+    trip 429s. Refills continuously; `acquire()` waits until a token is free.
+    """
+
+    def __init__(self) -> None:
+        self._lock = asyncio.Lock()
+        self._tokens = 0.0
+        self._rpm = 0
+        self._last = 0.0
+
+    async def acquire(self, rpm: int) -> None:
+        async with self._lock:
+            now = time.monotonic()
+            if rpm != self._rpm:
+                # (Re)configure; start with a full bucket of 1 to allow an
+                # immediate first call.
+                self._rpm = rpm
+                self._tokens = 1.0
+                self._last = now
+            per_sec = rpm / 60.0
+            # Refill based on elapsed time, capped at the burst size (rpm).
+            self._tokens = min(float(rpm), self._tokens + (now - self._last) * per_sec)
+            self._last = now
+            if self._tokens < 1.0:
+                wait = (1.0 - self._tokens) / per_sec
+                await asyncio.sleep(wait)
+                self._tokens = 0.0
+                self._last = time.monotonic()
+            else:
+                self._tokens -= 1.0
+
+
+_rate_limiter = _RateLimiter()
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -208,12 +249,13 @@ class LLM:
 
     @retry(
         retry=retry_if_exception_type(_RETRYABLE),
-        stop=stop_after_attempt(4),
-        wait=wait_exponential(multiplier=1, min=1, max=20),
+        stop=stop_after_attempt(6),
+        wait=wait_exponential(multiplier=2, min=2, max=60),
         reraise=True,
     )
     async def complete(self, prompt: str, *, system: str | None = None) -> str:
         """Plain text completion. Returns the response text."""
+        await _rate_limiter.acquire(get_settings().llm_rpm)
         messages: list = []
         if system:
             messages.append(("system", system))
@@ -225,8 +267,8 @@ class LLM:
 
     @retry(
         retry=retry_if_exception_type(_RETRYABLE),
-        stop=stop_after_attempt(4),
-        wait=wait_exponential(multiplier=1, min=1, max=20),
+        stop=stop_after_attempt(6),
+        wait=wait_exponential(multiplier=2, min=2, max=60),
         reraise=True,
     )
     async def complete_structured(
@@ -240,6 +282,7 @@ class LLM:
         """
         from langchain_core.callbacks import UsageMetadataCallbackHandler
 
+        await _rate_limiter.acquire(get_settings().llm_rpm)
         messages: list = []
         if system:
             messages.append(("system", system))
@@ -275,6 +318,7 @@ async def embed_texts(texts: list[str], *, ledger: UsageLedger | None = None) ->
     cost for embeddings, like chat, comes from LangSmith.
     """
     model = get_settings().embedding_model
+    await _rate_limiter.acquire(get_settings().llm_rpm)
     vectors = await _embeddings(model).aembed_documents(texts)
     if ledger is not None:
         approx_tokens = sum(len(t) for t in texts) // 4
@@ -285,6 +329,7 @@ async def embed_texts(texts: list[str], *, ledger: UsageLedger | None = None) ->
 async def embed_query(text: str, *, ledger: UsageLedger | None = None) -> list[float]:
     """Embed a single query string (uses the query-side embedding path)."""
     model = get_settings().embedding_model
+    await _rate_limiter.acquire(get_settings().llm_rpm)
     vector = await _embeddings(model).aembed_query(text)
     if ledger is not None:
         approx_tokens = len(text) // 4

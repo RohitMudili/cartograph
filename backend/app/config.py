@@ -73,6 +73,11 @@ class Settings(BaseSettings):
     fast_model: str = Field(default=DEFAULT_FAST_MODEL)
     embedding_model: str = Field(default=DEFAULT_EMBEDDING_MODEL)
 
+    # Max LLM requests/minute, applied across all model calls. Keep at/under your
+    # provider tier's RPM. Gemini free tier is ~10-15 RPM — the default 10 is safe
+    # for free; raise it (e.g. 1000) on a paid tier for full throughput.
+    llm_rpm: int = Field(default=10)
+
     # ── Provider API keys (set whichever providers your model strings use) ──
     # LangChain provider packages read their own canonical env vars
     # (GOOGLE_API_KEY, OPENAI_API_KEY, ANTHROPIC_API_KEY). We surface them here so

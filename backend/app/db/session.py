@@ -28,12 +28,20 @@ def get_engine() -> AsyncEngine:
     global _engine, _sessionmaker
     if _engine is None:
         settings = get_settings()
+        connect_args: dict = {}
+        # Supabase's transaction pooler (pgbouncer, port 6543) does not support
+        # prepared statements, which asyncpg uses by default — disable its
+        # statement cache so connections through the pooler work. Harmless on a
+        # direct Postgres connection (local docker), so we key off the pooler host.
+        if "pooler.supabase.com" in settings.database_url:
+            connect_args["statement_cache_size"] = 0
         _engine = create_async_engine(
             settings.database_url,
             pool_pre_ping=True,
             pool_size=10,
             max_overflow=20,
             echo=False,
+            connect_args=connect_args,
         )
         _sessionmaker = async_sessionmaker(_engine, expire_on_commit=False)
     return _engine
