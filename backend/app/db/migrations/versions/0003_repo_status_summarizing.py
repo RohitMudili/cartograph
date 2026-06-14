@@ -1,7 +1,7 @@
 """Add 'summarizing' to repo_status enum.
 
-The Phase 3 semantic layer adds a SUMMARIZING repo state between PARSING and
-INDEXED. Postgres enums are extended with ALTER TYPE ... ADD VALUE.
+The semantic layer (summaries + embeddings) adds a SUMMARIZING repo state between
+PARSING and INDEXED. Postgres enums are extended with ALTER TYPE ... ADD VALUE.
 
 Revision ID: 0003
 Revises: 0002

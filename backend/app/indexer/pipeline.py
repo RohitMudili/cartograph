@@ -1,8 +1,8 @@
 """Static indexing pipeline: clone → parse → build graph.
 
-Orchestrates the deterministic, zero-LLM Phase 2 flow end to end and records it
-as an IndexRun. The LLM enrichment layer (Phase 3) runs *after* this on the
-persisted graph; this pipeline is fully functional and testable on its own.
+Orchestrates the deterministic, zero-LLM static-graph flow end to end and records
+it as an IndexRun, then runs the semantic layer (summaries + embeddings) when an
+LLM is configured. The static portion is fully functional and testable on its own.
 
 Flow:
   1. Create/lookup the Repo row, open an IndexRun.
@@ -140,9 +140,9 @@ async def index_repo(session: AsyncSession, url: str, *, branch: str | None = No
 
         stats = await build_graph_from_workspace(session, repo.id, workspace)
 
-        # Phase 3: semantic layer (summaries + embeddings). Skipped cleanly when
-        # no LLM key is configured — the static graph above is fully usable on
-        # its own; enrichment just doesn't run.
+        # Semantic layer (summaries + embeddings). Skipped cleanly when no LLM key
+        # is configured — the static graph above is fully usable on its own;
+        # enrichment just doesn't run.
         ledger = UsageLedger()
         summary_stats = None
         if get_settings().llm_available:

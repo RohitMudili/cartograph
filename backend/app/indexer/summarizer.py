@@ -1,16 +1,16 @@
-"""Semantic layer: per-symbol summaries + embeddings (Phase 3).
+"""Semantic layer: per-symbol summaries + embeddings.
 
-Runs *after* the static graph is built (Phase 2). For each symbol node it writes
-a concise 1-2 line summary, then embeds the summary (for `summary_embedding`) and
-each chunk (for `chunk.embedding`) into pgvector. This is the only LLM cost in the
-indexing path before the agent fleet — and it's all on the cheap `fast` tier.
+Runs *after* the static graph is built. For each symbol node it writes a concise
+1-2 line summary, then embeds the summary (for `summary_embedding`) and each chunk
+(for `chunk.embedding`) into pgvector. This is the only LLM cost in the indexing
+path before the agent fleet — and it's all on the cheap `fast` tier.
 
 Design:
 - **Bottom-up.** Leaf symbols (functions/methods) are summarized first; container
   summaries (class, file) are generated afterwards and given their children's
   summaries as context, so a file summary reflects what's actually inside it
   without re-reading every line. This keeps prompts small (cost) and summaries
-  coherent (quality) — the GraphRAG bottom-up move from PLAN.md §2.2 step 3.
+  coherent (quality) — the GraphRAG bottom-up summarization move.
 - **Concurrent + bounded.** Summaries fan out with a semaphore (max_agent_concurrency)
   so a big repo doesn't open thousands of simultaneous requests.
 - **Structured output.** Each summary call returns a validated Pydantic object.

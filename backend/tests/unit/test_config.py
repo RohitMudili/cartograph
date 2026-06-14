@@ -2,7 +2,7 @@
 
 These lock the invariants that the cost-accounting and tiering logic rely on:
 every model used by a tier must have a price entry, and the embedding dimension
-must stay in sync with whatever the DB vector columns expect (Phase 2).
+must stay in sync with whatever the DB vector columns expect.
 """
 
 from __future__ import annotations

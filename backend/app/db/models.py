@@ -1,9 +1,9 @@
 """ORM models — the knowledge-graph schema (PLAN.md §3).
 
-Phase 2 (the static indexer) populates: Repo, Node, Edge, Chunk, IndexRun.
-LLM-written columns (`summary`, `summary_embedding`, `annotations`) and the
-Phase 3+ tables (Community, AgentEvent, Question) are defined now so the schema
-is whole and migrations stay stable, but remain null/empty until their phase.
+The static indexer populates: Repo, Node, Edge, Chunk, IndexRun. LLM-written
+columns (`summary`, `summary_embedding`, `annotations`) and the agent-fleet
+tables (Community, AgentEvent, Question) are defined now so the schema is whole
+and migrations stay stable, but remain null/empty until those layers run.
 
 Design notes:
 - BigInteger PKs on graph tables (nodes/edges/chunks) — a large repo is millions
@@ -11,7 +11,7 @@ Design notes:
 - (repo_id, content_hash) and (repo_id, fqname) carry uniqueness/lookup load, so
   they're indexed. Citations and incremental invalidation both key on these.
 - ON DELETE CASCADE from repo downward — dropping a repo cleans its whole graph.
-- Vector columns are nullable; they're filled in Phase 3.
+- Vector columns are nullable; they're filled by the summarizer/embedding layer.
 """
 
 from __future__ import annotations
@@ -89,10 +89,10 @@ class Node(Base):
     # loc, fan_in, fan_out, churn, centrality — filled by the graph builder.
     metrics: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
 
-    # LLM layer (Phase 3) — null until summarized.
+    # Semantic layer — null until the summarizer/embedding step runs.
     summary: Mapped[str | None] = mapped_column(Text)
     summary_embedding: Mapped[list[float] | None] = mapped_column(Vector(EMBEDDING_DIM))
-    # Verified findings written back by agents (Phase 3): list of
+    # Verified findings written back by the agent fleet: list of
     # {text, source, verified, run_id, created_at}.
     annotations: Mapped[list[dict]] = mapped_column(JSONB, default=list, nullable=False)
 
@@ -160,7 +160,7 @@ class Chunk(Base):
     start_line: Mapped[int] = mapped_column(Integer, nullable=False)
     end_line: Mapped[int] = mapped_column(Integer, nullable=False)
     text: Mapped[str] = mapped_column(Text, nullable=False)
-    embedding: Mapped[list[float] | None] = mapped_column(Vector(EMBEDDING_DIM))  # Phase 3
+    embedding: Mapped[list[float] | None] = mapped_column(Vector(EMBEDDING_DIM))  # set by embedder
 
     __table_args__ = (
         Index("ix_chunks_repo", "repo_id"),

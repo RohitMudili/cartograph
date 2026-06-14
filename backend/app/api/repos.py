@@ -1,12 +1,12 @@
 """Repository indexing endpoints.
 
-POST /api/repos       — index a repo (synchronous in Phase 2; moves to a
-                        background worker + WebSocket events in a later phase).
+POST /api/repos       — index a repo (synchronous for now; moves to a background
+                        worker + WebSocket events later).
 GET  /api/repos/{id}  — repo status and stats.
 
 For now indexing runs inline within the request. The static pipeline is fast
 (seconds for mid-size repos), but a long clone could exceed a request budget;
-the worker/queue split is a documented Phase 5+ change (PLAN.md §4.1).
+the worker/queue split is a documented future change (PLAN.md §4.1).
 """
 
 from __future__ import annotations

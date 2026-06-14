@@ -1,4 +1,4 @@
-"""End-to-end pipeline tests — the Phase 2 milestone.
+"""End-to-end pipeline tests — clone → graph → semantic layer.
 
 Two tiers:
 - `test_build_from_local_dir` (db): runs the real parse + build pipeline core

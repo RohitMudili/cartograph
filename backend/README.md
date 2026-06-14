@@ -17,13 +17,13 @@ uv run uvicorn app.main:app --reload
 ```
 app/
 ├── main.py        FastAPI app, lifespan, router wiring
-├── config.py      settings + Gemini model registry (single source of truth)
+├── config.py      settings + provider-agnostic model registry (single source of truth)
 ├── logging.py     structlog configuration
-├── api/           HTTP routers (health; more in later phases)
+├── api/           HTTP routers (health, repos; more to come)
 ├── db/            engine/session, declarative base, health probe, migrations
-├── indexer/       static analysis pipeline (Phase 2)
-├── agents/        LangGraph agent fleet (Phase 3)
-└── query/         retrieval, routing, answering, citation verification (Phase 4)
+├── indexer/       clone → parse → static graph + semantic layer
+├── agents/        LLM wrapper + LangGraph agent fleet
+└── query/         retrieval, routing, answering, citation verification
 ```
 
 ## Commands

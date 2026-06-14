@@ -10,7 +10,7 @@ is deliberately defensive:
   submodules.
 - Size guardrails enforced *after* clone (file count + byte size); the run aborts
   and the workspace is cleaned if exceeded.
-- We never execute repo code. tree-sitter (Phase 2 parser) reads bytes only.
+- We never execute repo code. The tree-sitter parser reads bytes only.
 
 The cloner returns a `CloneResult` with the workspace path and resolved head
 commit. Callers are responsible for cleanup via `cleanup_workspace` (the indexing

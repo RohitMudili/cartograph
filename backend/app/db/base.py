@@ -1,8 +1,8 @@
 """Declarative base and shared column types.
 
 Uses SQLAlchemy 2.0 typed declarative mapping (`Mapped` / `mapped_column`) so the
-ORM models are fully type-checked by pyright. Concrete table models land here in
-Phase 2 (the static indexer); this module defines the base and reusable mixins.
+ORM models are fully type-checked by pyright. Concrete table models live in
+`models.py`; this module defines the shared base and reusable mixins.
 """
 
 from __future__ import annotations

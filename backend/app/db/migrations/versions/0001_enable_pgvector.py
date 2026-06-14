@@ -1,8 +1,8 @@
 """Enable the pgvector extension.
 
 This is the bootstrap migration: the readiness probe (and the entire retrieval
-layer) requires the `vector` extension. Table migrations land in Phase 2 on top
-of this.
+layer) requires the `vector` extension. The graph-schema tables build on top of
+this.
 
 Revision ID: 0001
 Revises:

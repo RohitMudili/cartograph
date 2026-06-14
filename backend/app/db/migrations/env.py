@@ -1,9 +1,8 @@
 """Alembic environment — async-aware.
 
 Pulls the DB URL from app settings (not alembic.ini) so secrets stay in .env,
-and reflects `Base.metadata` for autogenerate. Concrete tables are registered in
-Phase 2; importing the models module here is what makes them visible to
-autogenerate.
+and reflects `Base.metadata` for autogenerate. Importing the models module here
+is what registers the ORM tables and makes them visible to autogenerate.
 """
 
 from __future__ import annotations

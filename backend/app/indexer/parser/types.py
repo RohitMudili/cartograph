@@ -1,7 +1,7 @@
 """Language-agnostic extraction types.
 
-The parser layer produces these plain dataclasses; the graph builder (Phase 2,
-part 4) translates them into ORM rows. Keeping extraction output decoupled from
+The parser layer produces these plain dataclasses; the graph builder translates
+them into ORM rows. Keeping extraction output decoupled from
 the database means parsers are pure, fast, and unit-testable without a DB, and
 adding a language is a new extractor producing the same shapes — not a schema
 change.
