@@ -492,6 +492,44 @@ Levers, in order of leverage:
 Every README cost number is generated from real accounting data (§4.2), with the
 measurement date.
 
+### 7.1 Cost accounting (billing-ready, zero price upkeep)
+
+Cost is a **product feature and a future billing input**, not just ops telemetry —
+it powers the live cost ticker, the per-question transparency strip, per-run
+totals, future per-user budgets, and eventual metered billing. So the cost
+**number** is stored in **our own Postgres** (`index_runs.cost_usd`,
+`questions.cost_usd`), where billing and the UI can read it directly.
+
+**We maintain zero model prices.** LangSmith traces every model call and
+**computes the cost itself** against the price map *it* maintains (current pricing
+for OpenAI/Anthropic/Gemini, no upkeep on our side). We read the computed cost
+back per run (`run.total_cost` via the LangSmith SDK) and persist it as our
+record:
+
+```
+model call ──▶ LangSmith trace + cost (their maintained prices)
+                      │  read run.total_cost (SDK)
+   our pipeline ──────┴──▶ index_runs.cost_usd / questions.cost_usd (our Postgres)
+                            → ticker, transparency strip, billing record
+```
+
+Key properties and honest caveats:
+
+- **No hardcoded price table on our side.** Earlier drafts proposed syncing
+  LangSmith's price map into our DB — **not possible: LangSmith exposes no API to
+  read the price map** (dashboard-only). But it *does* expose the **computed cost
+  per run** (`total_cost`/`prompt_cost`/`completion_cost`), which is what we read.
+- **Post-run, not in-request-path.** `total_cost` is available once the run is
+  traced, so the live ticker fetches costs as runs complete (fine for a ~90s index
+  run); it is not synchronous per-token. LangSmith labels it "estimated" — we store
+  the fetched value as our authoritative record.
+- **Graceful when LangSmith is off** (local dev / CI without a key): cost is
+  recorded as **null / unknown, never fabricated.** Honest-missing beats
+  estimated-from-a-map-we-chose-not-to-keep. Token counts (from provider
+  `usage_metadata`, already free) are still recorded so a run is never opaque.
+- **LangSmith tracing** doubles as run observability (the agent-fleet phase leans
+  on it for debugging). Opt-in via env var, off by default, never required to run.
+
 ---
 
 ## 8. Incremental Updates & Staleness (§the part everyone skips)
@@ -641,7 +679,8 @@ private — connect GitHub to index it" 403, not a cryptic clone failure.
 | LLM | Gemini via `google-genai` (+ `langchain-google-genai` inside LangGraph) | Two-tier Pro/Flash economics, JSON mode, context caching, long context |
 | Parsing | tree-sitter (python, typescript grammars) | Incremental, language-extensible, no code execution |
 | Graph algorithms | NetworkX + igraph/leidenalg | In-process; Leiden for communities; defer graph DB |
-| Storage | Postgres 16 + pgvector | One database for relational + vector + full-text (BM25-ish via tsvector) |
+| Storage | Postgres 16 + pgvector — docker-compose locally/CI, **Supabase** (managed Postgres, free tier, pgvector built-in) for the hosted demo | One database for relational + vector + full-text (BM25-ish via tsvector). Supabase = same engine, $0 hosting; only `DATABASE_URL` changes (use the pooler/6543 string in prod). No code or schema differences. |
+| Cost accounting | **LangSmith computes cost** per run (it maintains all model prices); we read `run.total_cost` back and store it in our Postgres as the billing/ticker record | Zero price-table upkeep on our side; cost lives in our DB for billing-readiness. Cost is null (not fabricated) when LangSmith is disabled — honest over estimated. See §7.1. |
 | Queue | Postgres-backed job table + worker process (e.g. `arq`/custom) | One less moving part than Redis/Celery for v1 |
 | Frontend | Next.js 15, TypeScript, Tailwind, shadcn/ui | Speed + polish |
 | Graph viz | Sigma.js (WebGL) or react-force-graph | Smooth at 5k nodes |

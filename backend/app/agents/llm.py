@@ -39,8 +39,6 @@ from tenacity import (
 
 from app.config import (
     EMBEDDING_DIM,
-    EMBEDDING_PRICING,
-    MODEL_PRICING,
     Settings,
     get_settings,
     split_model,
@@ -60,15 +58,23 @@ _PROVIDER_ENV = {
 
 @dataclass(slots=True)
 class CallCost:
+    """One model call's accounting.
+
+    Token counts come from the provider's usage_metadata (always available).
+    `usd` is the dollar cost — left None and filled later from LangSmith's
+    computed run cost (PLAN.md §7.1). With LangSmith disabled it stays None
+    (cost is honestly unknown, never fabricated from a price table we don't keep).
+    """
+
     model: str
     input_tokens: int
     output_tokens: int
-    usd: float
+    usd: float | None = None
 
 
 @dataclass(slots=True)
 class UsageLedger:
-    """Accumulates token + cost across a run or a question. Pass one in to track."""
+    """Accumulates token counts (and, post-LangSmith, cost) across a run/question."""
 
     calls: list[CallCost] = field(default_factory=list)
 
@@ -76,8 +82,10 @@ class UsageLedger:
         self.calls.append(cost)
 
     @property
-    def total_usd(self) -> float:
-        return sum(c.usd for c in self.calls)
+    def total_usd(self) -> float | None:
+        """Total dollar cost, or None if no call has a cost yet (LangSmith off)."""
+        priced = [c.usd for c in self.calls if c.usd is not None]
+        return sum(priced) if priced else None
 
     @property
     def total_input_tokens(self) -> int:
@@ -88,27 +96,21 @@ class UsageLedger:
         return sum(c.output_tokens for c in self.calls)
 
     def summary(self) -> dict:
+        total = self.total_usd
         return {
             "calls": len(self.calls),
             "input_tokens": self.total_input_tokens,
             "output_tokens": self.total_output_tokens,
-            "usd": round(self.total_usd, 6),
+            "usd": round(total, 6) if total is not None else None,
         }
 
 
-def _chat_price(model: str, usage: dict) -> tuple[int, int, float]:
-    """(input_tokens, output_tokens, usd) for a chat call from usage_metadata."""
-    _, bare = split_model(model)
-    in_tok = int(usage.get("input_tokens", 0) or 0)
-    out_tok = int(usage.get("output_tokens", 0) or 0)
-    rate = MODEL_PRICING.get(bare)
-    if rate is None:
-        # Unknown model: account tokens, but cost is 0 (and we log it loudly so a
-        # missing price entry is noticed rather than silently mis-billed).
-        log.warning("llm.price.unknown_model", model=model)
-        return in_tok, out_tok, 0.0
-    usd = in_tok / 1e6 * rate[0] + out_tok / 1e6 * rate[1]
-    return in_tok, out_tok, usd
+def _tokens(usage: dict) -> tuple[int, int]:
+    """(input_tokens, output_tokens) from a LangChain usage_metadata dict."""
+    return (
+        int(usage.get("input_tokens", 0) or 0),
+        int(usage.get("output_tokens", 0) or 0),
+    )
 
 
 def _ensure_provider_env(model: str, settings: Settings) -> None:
@@ -131,10 +133,29 @@ def _ensure_provider_env(model: str, settings: Settings) -> None:
         os.environ[env_var] = key
 
 
+@lru_cache(maxsize=1)
+def _configure_langsmith() -> bool:
+    """Enable LangSmith tracing if configured. Returns whether it's active.
+
+    Cached so the env is set once. When active, LangChain auto-traces every model
+    call to LangSmith, which computes cost — we read run.total_cost back into our
+    DB (PLAN.md §7.1). When inactive, no tracing happens and cost stays unknown.
+    """
+    settings = get_settings()
+    if not settings.langsmith_enabled:
+        return False
+    os.environ.setdefault("LANGSMITH_TRACING", "true")
+    os.environ.setdefault("LANGSMITH_API_KEY", settings.langsmith_api_key)
+    os.environ.setdefault("LANGSMITH_PROJECT", settings.langsmith_project)
+    log.info("llm.langsmith.enabled", project=settings.langsmith_project)
+    return True
+
+
 @lru_cache(maxsize=8)
 def _chat_model(model: str) -> BaseChatModel:
     """Instantiate (and cache) a chat model from a 'provider:model' string."""
     settings = get_settings()
+    _configure_langsmith()
     _ensure_provider_env(model, settings)
     # init_chat_model accepts "provider:model"; max_retries=0 because we own retry.
     return init_chat_model(model, max_retries=0)
@@ -180,9 +201,10 @@ class LLM:
 
     def _account(self, message: AIMessage) -> None:
         usage = getattr(message, "usage_metadata", None) or {}
-        in_tok, out_tok, usd = _chat_price(self.model, dict(usage))
+        in_tok, out_tok = _tokens(dict(usage))
         if self.ledger is not None:
-            self.ledger.record(CallCost(self.model, in_tok, out_tok, usd))
+            # usd left None — filled later from LangSmith's run.total_cost.
+            self.ledger.record(CallCost(self.model, in_tok, out_tok))
 
     @retry(
         retry=retry_if_exception_type(_RETRYABLE),
@@ -227,11 +249,12 @@ class LLM:
         structured = _chat_model(self.model).with_structured_output(schema)
         result = await structured.ainvoke(messages, config={"callbacks": [cb]})
 
-        # Account from the callback's aggregated usage (keyed by model name).
+        # Account token counts from the callback's aggregated usage; cost (usd)
+        # is filled later from LangSmith.
         for usage in cb.usage_metadata.values():
-            in_tok, out_tok, usd = _chat_price(self.model, dict(usage))
+            in_tok, out_tok = _tokens(dict(usage))
             if self.ledger is not None:
-                self.ledger.record(CallCost(self.model, in_tok, out_tok, usd))
+                self.ledger.record(CallCost(self.model, in_tok, out_tok))
         return result  # type: ignore[return-value]
 
 
@@ -248,16 +271,14 @@ def fast(ledger: UsageLedger | None = None) -> LLM:
 async def embed_texts(texts: list[str], *, ledger: UsageLedger | None = None) -> list[list[float]]:
     """Embed a batch of texts with the configured embedding model.
 
-    Cost is estimated from a token approximation (embedding APIs don't return
-    usage the same way); ~4 chars/token is the standard rule of thumb.
+    Records an approximate token count (~4 chars/token) for visibility; dollar
+    cost for embeddings, like chat, comes from LangSmith.
     """
     model = get_settings().embedding_model
     vectors = await _embeddings(model).aembed_documents(texts)
     if ledger is not None:
-        _, bare = split_model(model)
-        rate = EMBEDDING_PRICING.get(bare, 0.0)
         approx_tokens = sum(len(t) for t in texts) // 4
-        ledger.record(CallCost(model, approx_tokens, 0, approx_tokens / 1e6 * rate))
+        ledger.record(CallCost(model, approx_tokens, 0))
     return vectors
 
 
@@ -266,8 +287,6 @@ async def embed_query(text: str, *, ledger: UsageLedger | None = None) -> list[f
     model = get_settings().embedding_model
     vector = await _embeddings(model).aembed_query(text)
     if ledger is not None:
-        _, bare = split_model(model)
-        rate = EMBEDDING_PRICING.get(bare, 0.0)
         approx_tokens = len(text) // 4
-        ledger.record(CallCost(model, approx_tokens, 0, approx_tokens / 1e6 * rate))
+        ledger.record(CallCost(model, approx_tokens, 0))
     return vector

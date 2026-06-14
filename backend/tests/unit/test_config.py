@@ -11,18 +11,9 @@ from app.config import (
     DEFAULT_FAST_MODEL,
     DEFAULT_REASONING_MODEL,
     EMBEDDING_DIM,
-    MODEL_PRICING,
     Settings,
     split_model,
 )
-
-
-def test_default_models_have_pricing() -> None:
-    # The bare model id (after the provider prefix) must have a price entry so
-    # cost accounting is real for the out-of-the-box config.
-    for model in (DEFAULT_REASONING_MODEL, DEFAULT_FAST_MODEL):
-        _, bare = split_model(model)
-        assert bare in MODEL_PRICING, f"{bare} missing from MODEL_PRICING"
 
 
 def test_default_models_are_provider_prefixed() -> None:

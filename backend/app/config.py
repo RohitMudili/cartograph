@@ -38,26 +38,11 @@ DEFAULT_EMBEDDING_MODEL = "google_genai:gemini-embedding-2"
 # switch to an embedding model with a different dimension, a migration is needed.
 EMBEDDING_DIM = 1536
 
-# Chat-model pricing (USD per 1M tokens), keyed by bare model id. (input, output).
-MODEL_PRICING: dict[str, tuple[float, float]] = {
-    # Google Gemini
-    "gemini-3.5-flash": (0.30, 2.50),
-    "gemini-3.1-flash-lite": (0.10, 0.40),
-    "gemini-3.1-pro-preview": (1.25, 10.00),
-    # OpenAI (verify ids/prices before relying on cost numbers for these)
-    "gpt-5": (1.25, 10.00),
-    "gpt-5-mini": (0.25, 2.00),
-    # Anthropic
-    "claude-sonnet-4-6": (3.00, 15.00),
-    "claude-haiku-4-5": (1.00, 5.00),
-}
-
-# Embedding pricing (USD per 1M tokens), keyed by bare model id. Input-only.
-EMBEDDING_PRICING: dict[str, float] = {
-    "gemini-embedding-2": 0.20,
-    "text-embedding-3-small": 0.02,
-    "text-embedding-3-large": 0.13,
-}
+# NOTE: Cartograph maintains NO model price table. Cost is computed by LangSmith
+# (it maintains current prices for all providers) and read back per run via
+# run.total_cost, then stored in our Postgres. We only ever record token COUNTS
+# locally (from provider usage_metadata); the dollar cost comes from LangSmith.
+# See PLAN.md §7.1.
 
 
 def split_model(model: str) -> tuple[str, str]:
@@ -96,6 +81,18 @@ class Settings(BaseSettings):
     google_api_key: str = Field(default="")
     openai_api_key: str = Field(default="")
     anthropic_api_key: str = Field(default="")
+
+    # ── LangSmith (tracing + cost computation; opt-in, off by default) ──
+    # When tracing is on, LangChain auto-traces every model call to LangSmith,
+    # which computes cost. We read run.total_cost back into our DB. With it off,
+    # cost is recorded as null (never fabricated) — see PLAN.md §7.1.
+    langsmith_tracing: bool = Field(default=False)
+    langsmith_api_key: str = Field(default="")
+    langsmith_project: str = Field(default="cartograph")
+
+    @property
+    def langsmith_enabled(self) -> bool:
+        return self.langsmith_tracing and bool(self.langsmith_api_key)
 
     # ── Database ──
     database_url: str = Field(
