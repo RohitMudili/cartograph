@@ -16,35 +16,59 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 # ─────────────────────────────────────────────────────────────────────────────
 # Gemini model registry
 #
-# Verified against ai.google.dev/gemini-api/docs on 2026-06-13. Re-verify model
-# IDs and pricing at each release; do not edit these from memory elsewhere in the
-# codebase (PLAN.md §4.2). Pricing is USD per 1M tokens, used for cost accounting.
+# Cartograph is provider-agnostic via LangChain's init_chat_model. Models are
+# named as "<provider>:<model>" strings (provider ∈ google_genai | openai |
+# anthropic) and are SERVER-CONFIGURED in .env — swapping a tier's provider is a
+# one-line change with no code edits (PLAN.md §4.2). Defaults below use Gemini.
 #
-#   Reasoning tier (planner / synthesizer / critic): gemini-3.5-flash is the
-#     current GA "most intelligent for agentic/coding" model. The Gemini 3 Pro
-#     tier (gemini-3.1-pro-preview) is still preview; switch REASONING to it once
-#     it reaches GA if evals justify the cost.
-#   Fast tier (explorers / summaries / router): gemini-3.1-flash-lite, the GA
-#     cost-efficiency workhorse.
-#   Embeddings: gemini-embedding-2, MRL-truncatable; we store 1536 dims
-#     (recommended tier; halves storage vs the 3072 default at negligible quality
-#     loss) for pgvector.
+#   Reasoning tier  (planner / synthesizer / critic)  — the smart, costlier model.
+#   Fast tier       (explorers / summaries / router)  — the cheap, high-volume one.
+#   Embedding model (separate interface; provider may differ from the chat tiers).
+#
+# Pricing is USD per 1M tokens, keyed by the bare model id (the part after the
+# "provider:" prefix), used for cost accounting. Verified 2026-06-13; re-verify at
+# each model release and do not edit these from memory elsewhere in the codebase.
 # ─────────────────────────────────────────────────────────────────────────────
 
-MODEL_REASONING = "gemini-3.5-flash"
-MODEL_FAST = "gemini-3.1-flash-lite"
-MODEL_EMBEDDING = "gemini-embedding-2"
+DEFAULT_REASONING_MODEL = "google_genai:gemini-3.5-flash"
+DEFAULT_FAST_MODEL = "google_genai:gemini-3.1-flash-lite"
+DEFAULT_EMBEDDING_MODEL = "google_genai:gemini-embedding-2"
 
+# pgvector column dimension. MUST match the embedding model's output size; if you
+# switch to an embedding model with a different dimension, a migration is needed.
 EMBEDDING_DIM = 1536
 
-# Pricing (USD per 1M tokens), verified 2026-06-13. (input, output).
+# Chat-model pricing (USD per 1M tokens), keyed by bare model id. (input, output).
 MODEL_PRICING: dict[str, tuple[float, float]] = {
+    # Google Gemini
     "gemini-3.5-flash": (0.30, 2.50),
     "gemini-3.1-flash-lite": (0.10, 0.40),
-    "gemini-3.1-pro-preview": (1.25, 10.00),  # upgrade target for REASONING
+    "gemini-3.1-pro-preview": (1.25, 10.00),
+    # OpenAI (verify ids/prices before relying on cost numbers for these)
+    "gpt-5": (1.25, 10.00),
+    "gpt-5-mini": (0.25, 2.00),
+    # Anthropic
+    "claude-sonnet-4-6": (3.00, 15.00),
+    "claude-haiku-4-5": (1.00, 5.00),
 }
-# Embedding pricing (USD per 1M tokens). Output-only.
-EMBEDDING_PRICE_PER_1M = 0.20
+
+# Embedding pricing (USD per 1M tokens), keyed by bare model id. Input-only.
+EMBEDDING_PRICING: dict[str, float] = {
+    "gemini-embedding-2": 0.20,
+    "text-embedding-3-small": 0.02,
+    "text-embedding-3-large": 0.13,
+}
+
+
+def split_model(model: str) -> tuple[str, str]:
+    """Split a 'provider:model' string into (provider, bare_model_id).
+
+    Falls back to ('', model) if no provider prefix is present.
+    """
+    if ":" in model:
+        provider, bare = model.split(":", 1)
+        return provider, bare
+    return "", model
 
 
 class Settings(BaseSettings):
@@ -59,8 +83,19 @@ class Settings(BaseSettings):
         protected_namespaces=(),
     )
 
-    # ── Gemini ──
-    gemini_api_key: str = Field(default="", description="Gemini API key")
+    # ── Models (provider-agnostic; "provider:model" strings) ──
+    reasoning_model: str = Field(default=DEFAULT_REASONING_MODEL)
+    fast_model: str = Field(default=DEFAULT_FAST_MODEL)
+    embedding_model: str = Field(default=DEFAULT_EMBEDDING_MODEL)
+
+    # ── Provider API keys (set whichever providers your model strings use) ──
+    # LangChain provider packages read their own canonical env vars
+    # (GOOGLE_API_KEY, OPENAI_API_KEY, ANTHROPIC_API_KEY). We surface them here so
+    # they load from .env and can be validated; llm.py exports them to the
+    # environment for the provider SDKs.
+    google_api_key: str = Field(default="")
+    openai_api_key: str = Field(default="")
+    anthropic_api_key: str = Field(default="")
 
     # ── Database ──
     database_url: str = Field(
