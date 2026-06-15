@@ -177,6 +177,30 @@ function EmptyState({ onPick }: { onPick: (q: string) => void }) {
   );
 }
 
+function PendingIndicator() {
+  const [secs, setSecs] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setSecs((s) => s + 1), 1000);
+    return () => clearInterval(t);
+  }, []);
+  // Cycle through what's actually happening so it reads as alive, not frozen.
+  const stage =
+    secs < 3 ? "Searching the graph" : secs < 9 ? "Synthesizing answer" : "Verifying citations";
+  return (
+    <div className="text-sm text-muted" role="status" aria-live="polite">
+      <div className="flex items-center gap-2">
+        <Spinner /> {stage}…
+        <span className="font-mono text-xs text-faint tabular">{secs}s</span>
+      </div>
+      {secs >= 6 && (
+        <p className="mt-1.5 text-xs text-faint">
+          Free-tier models are paced (~15s/question). A paid key makes this near-instant.
+        </p>
+      )}
+    </div>
+  );
+}
+
 function ThreadBlock({ thread }: { thread: Thread }) {
   return (
     <div>
@@ -187,11 +211,7 @@ function ThreadBlock({ thread }: { thread: Thread }) {
         </div>
       </div>
 
-      {thread.pending && (
-        <div className="flex items-center gap-2 text-sm text-muted" role="status">
-          <Spinner /> Searching the graph and verifying citations…
-        </div>
-      )}
+      {thread.pending && <PendingIndicator />}
 
       {thread.error && (
         <p className="rounded-md border border-rejected/40 bg-surface-2 px-4 py-2.5 text-sm text-rejected">

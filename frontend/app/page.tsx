@@ -24,9 +24,13 @@ export default function Home() {
       if (e instanceof ApiError && e.status === 403) {
         setError("This repo is private. Cartograph can't access it yet.");
       } else if (e instanceof ApiError) {
-        setError(e.detail);
+        setError(`Indexing failed: ${e.detail}`);
       } else {
-        setError("Couldn't reach the backend. Is the API running on :8000?");
+        setError(
+          "Couldn't reach the backend at " +
+            (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000") +
+            ". Make sure the API server is running.",
+        );
       }
       setBusy(false);
       setPhase(null);

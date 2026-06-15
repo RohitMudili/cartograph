@@ -122,8 +122,34 @@ async def build_graph_from_workspace(
 
 async def index_repo(session: AsyncSession, url: str, *, branch: str | None = None) -> IndexResult:
     """Run the full static index for `url`. Commits on success; the caller's
-    session transaction wraps the whole operation."""
+    session transaction wraps the whole operation.
+
+    Idempotent: if the repo is already indexed, returns its existing result
+    without re-cloning or re-building (re-indexing is an explicit reindex action,
+    not the default — so the UI can send a user straight to chat).
+    """
     repo = await _get_or_create_repo(session, url)
+
+    if repo.status == RepoStatus.INDEXED:
+        stats = repo.stats or {}
+        latest_run = await session.scalar(
+            select(IndexRun)
+            .where(IndexRun.repo_id == repo.id)
+            .order_by(IndexRun.started_at.desc())
+            .limit(1)
+        )
+        return IndexResult(
+            repo_id=str(repo.id),
+            run_id=str(latest_run.id) if latest_run else "",
+            head_commit=repo.head_commit or "",
+            stats=BuildStats(
+                nodes=int(stats.get("nodes", 0)),
+                edges=int(stats.get("edges", 0)),
+                chunks=int(stats.get("chunks", 0)),
+                files=int(stats.get("files_parsed", 0)),
+            ),
+        )
+
     run = IndexRun(repo_id=repo.id, status=RunStatus.RUNNING)
     session.add(run)
     repo.status = RepoStatus.CLONING
