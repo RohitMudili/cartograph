@@ -38,7 +38,16 @@ dev + a throwaway Postgres in CI.
 
 ---
 
-## ⚠️ The one open issue (why we paused)
+## ✅ Validated on real data (2026-06-15)
+
+Indexed a small real repo (benhoyt/pybktree) end-to-end with **real Gemini calls
+against live Supabase** — no 429s, ~65s with the rate limiter at 10 RPM:
+9 nodes → 9 real summaries + 9 summary embeddings + 9 chunk embeddings, all
+persisted to Supabase. Summaries are accurate ("implements a Burkhard-Keller tree
+… for efficient proximity search"). The full pipeline (clone → graph → summaries
+→ embeddings) is **proven**, not just correct-by-construction.
+
+## ⚠️ Throughput note (not a blocker)
 
 **Gemini free tier ≈ 10 RPM** — too slow to index a real repo (paygraph's ~427
 symbols would take ~43 min, and the free tier 429s under load). We:
