@@ -706,6 +706,66 @@ This is a **dedicated phase after the Week-1 spine** (it needs the frontend's
 Until it lands, `POST /api/repos` on a private repo returns a clear "this repo is
 private — connect GitHub to index it" 403, not a cryptic clone failure.
 
+> **Two distinct auth concerns — do not conflate (see §9B):** GitHub auth here is
+> *repo-access authorization* ("can we clone this private repo"). User **identity**
+> ("who is this person, what are their saved repos") is a separate layer handled by
+> Google sign-in via Supabase (§9B). A user signs in with Google, then connects
+> GitHub *on top* only when they try to index a private repo.
+
+---
+
+## 9B. User Authentication & Identity (Google via Supabase)
+
+User identity is separate from repo access (§9A). Identity answers "who is this
+person" so users have accounts, saved/recently-indexed repos, and question
+history. **Mechanism: Google sign-in via Supabase Auth.** Supabase already hosts
+our Postgres, so its Auth (a managed `auth.users` table + JWT sessions + the
+OAuth dance) is the low-friction choice — no second vendor.
+
+### Flow
+
+```
+Landing / app → "Continue with Google" (supabase-js) → Google consent →
+  Supabase mints a session (JWT) → frontend holds it →
+  backend validates the Supabase JWT on protected routes →
+  our app rows (repos, questions) gain a nullable owner_user_id.
+```
+
+- **Identity ≠ repo access.** A signed-in Google user can index *public* repos
+  immediately. Indexing a *private* repo triggers the §9A "connect GitHub" prompt
+  — GitHub links onto the existing identity, it is not a second login.
+- **Anonymous still works** (at least in early phases): indexing a public repo
+  without an account stays allowed; sign-in unlocks persistence (saved repos,
+  history) and is required before connecting GitHub.
+
+### What's needed to wire it (operator setup, one-time)
+
+1. **Google OAuth client** (Google Cloud Console → Credentials → OAuth client ID,
+   type Web): yields a **Client ID + Secret**; authorized redirect URI is the one
+   Supabase shows (`https://<project>.supabase.co/auth/v1/callback`).
+2. **Enable Google in Supabase** → Auth → Providers → Google → paste Client ID/Secret.
+3. **Frontend keys:** Supabase **project URL + anon key** (Project Settings → API)
+   for `supabase-js`. These are the public client keys — distinct from the DB
+   connection string we already use for SQLAlchemy.
+
+### Backend / data-model additions
+
+- `auth.users` is managed by Supabase. Our tables gain a **nullable
+  `owner_user_id`** (Supabase user uuid) on `repos` (and later `questions`) — null
+  = anonymous/public. **This is where the RLS deny-all baseline (migration 0004)
+  earns out:** real per-user ownership policies (`USING (owner_user_id = auth.uid())`)
+  layer on top once identity exists.
+- Backend validates the Supabase JWT (verify signature against Supabase's JWKS) on
+  protected endpoints; an unauthenticated request is anonymous, not rejected,
+  except for owner-scoped actions (connect GitHub, list my repos).
+- The §9A encrypted GitHub token is stored against the `owner_user_id`.
+
+### Build placement
+
+A **dedicated phase after the landing page**, before (or alongside) the §9A
+GitHub-access phase — identity is the foundation GitHub-linking attaches to. Does
+not block the public-repo demo, which stays anonymous-friendly.
+
 ---
 
 ## 10. Tech Stack Summary
