@@ -23,6 +23,7 @@ from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     BigInteger,
     CheckConstraint,
+    Computed,
     DateTime,
     Enum,
     Float,
@@ -34,7 +35,7 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.config import EMBEDDING_DIM
@@ -161,10 +162,18 @@ class Chunk(Base):
     end_line: Mapped[int] = mapped_column(Integer, nullable=False)
     text: Mapped[str] = mapped_column(Text, nullable=False)
     embedding: Mapped[list[float] | None] = mapped_column(Vector(EMBEDDING_DIM))  # set by embedder
+    # DB-maintained full-text search vector over `text` — the BM25-ish keyword
+    # side of hybrid retrieval. Generated column (Postgres keeps it in sync);
+    # GIN-indexed for fast `@@` matches.
+    tsv: Mapped[str | None] = mapped_column(
+        TSVECTOR,
+        Computed("to_tsvector('english', text)", persisted=True),
+    )
 
     __table_args__ = (
         Index("ix_chunks_repo", "repo_id"),
         Index("ix_chunks_node", "node_id"),
+        Index("ix_chunks_tsv", "tsv", postgresql_using="gin"),
     )
 
 
