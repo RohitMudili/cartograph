@@ -240,6 +240,45 @@ attributed). A repeated question that needed escalation yesterday is a local-rou
 hit today. **The graph is a learning cache.** This loop is a headline feature of
 the writeup.
 
+#### Answer quality — scoped improvements (observed gap)
+
+The first working version answers correctly and cites verifiably, but on
+**open-ended / onboarding questions** ("help me get started contributing") the
+answers read like flat API docs, not a senior engineer orienting you. Honest
+diagnosis from a real run: the quality is capped by *what we retrieve* and *how we
+prompt*, **not** by the model — which means it's tunable, not fundamental. Scoped
+work, in rough leverage order:
+
+1. **Index docs/markdown (highest leverage).** We currently parse Python only, so
+   the model never sees the `README` — the single best source for "what is this
+   and why." Add a markdown "extractor" that emits a FILE-level `DOC` node plus
+   one `DOC` node **per section** (split on `#`/`##` headers, each with its own
+   line range), flowing through the existing graph builder → summarizer →
+   embeddings → retrieval with no downstream changes. Section-level chunking
+   matters: a whole 500-line README as one chunk poisons retrieval. Also index
+   other docs (`CONTRIBUTING`, `docs/*.md`) and config (`pyproject`,
+   `package.json`) as `CONFIG`/`DOC` nodes.
+2. **Question-type-aware prompting.** The current answerer prompt optimizes for
+   grounded+cited, which yields accurate-but-dry output. Detect intent
+   (onboarding / architecture / specific-symbol / how-to) and adapt the system
+   prompt: onboarding answers should lead with *purpose* ("this is a BK-tree,
+   used for fuzzy/nearest-neighbor lookup"), then *orientation* ("read `find()`
+   first — it's the heart; `add()` is simpler"), then *how to contribute* (tests,
+   conventions, likely change sites). Cite as ever, but the shape should fit the
+   question.
+3. **Retrieve more for broad questions.** Onboarding/architecture questions want
+   breadth (README + entrypoints + top-central nodes), not the top-k a
+   specific-symbol question wants. Tie retrieval breadth + which signals to the
+   detected route.
+4. **Measure it, don't vibe it.** These improvements get **graded by the eval
+   harness** (§6) on an *answer-quality* dimension (purpose stated? oriented?
+   actionable?) split by question type — so we tune deliberately. This gap is
+   exactly the kind of thing evals exist to catch.
+
+Status: deferred behind the agent fleet / frontend, but #1 (markdown indexing) is
+a small, isolated win that can land any time — it's the clearest single quality
+lever available.
+
 ---
 
 ## 3. Data Model

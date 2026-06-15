@@ -63,19 +63,22 @@ Until then, develop/test on small repos — fully unblocked.
 
 In rough priority / dependency order:
 
-1. **Multi-agent LangGraph fleet** — planner → parallel explorers → synthesizer →
-   critic that enrich the graph with verified findings + GraphRAG community
-   summaries + the WebSocket event stream. This is the "watch agents explore"
-   centerpiece and feeds the Mission Control UI.
-2. **Frontend** — the whole thing (Mission Control, Atlas graph, Chat). Designed
-   replay-first (FRONTEND.md/DESIGN.md), so it can build against fixture event
-   logs without blocking on the backend.
-3. **Eval harness** — golden Q&A + published citation precision/recall scoreboard
-   (the credibility moat).
-4. **GitHub OAuth** (task #15) — private/org repo access; design in PLAN.md §9A.
-5. **Deploy + demo video + writeup.**
+- **Frontend so far:** ✅ home (paste-a-repo) + ✅ Chat console (working, demoed
+  live). Remaining UI: Mission Control + Atlas graph view.
+1. **Answer quality (task #20)** — index markdown/README (DOC node per section) +
+   question-type-aware prompting. A real, observed gap: onboarding answers are
+   correct+cited but read like flat API docs. #1 (markdown indexing) is a small
+   isolated win, landable anytime. See PLAN.md §2.3 Answer Quality.
+2. **Multi-agent LangGraph fleet** — planner → explorers → synthesizer → critic;
+   GraphRAG community summaries; WebSocket event stream. The "watch agents
+   explore" centerpiece; feeds Mission Control.
+3. **Atlas + Mission Control UI** — the remaining views (replay-first).
+4. **Eval harness** — golden Q&A + citation precision/recall + answer-quality
+   scoreboard (the credibility moat; also grades task #20).
+5. **GitHub OAuth** (task #15) — private/org repo access; PLAN.md §9A.
+6. **Deploy + demo video + writeup.**
 
-Est. ~3-4 weeks. The core value (cited Q&A) is already demoable today.
+Est. ~3 weeks. The core value (cited Q&A) is already demoable in the browser today.
 
 ---
 
