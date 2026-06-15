@@ -37,7 +37,7 @@ function canRender3D(): boolean {
   }
 }
 
-export function GraphFieldAuto() {
+export function GraphFieldAuto({ paused = false }: { paused?: boolean }) {
   // Start with the 2D field (also the SSR output, so no hydration mismatch),
   // then upgrade after mount if the device qualifies. Capability detection needs
   // `window`, so it can only run client-side, in an effect. This is a one-time
@@ -48,5 +48,7 @@ export function GraphFieldAuto() {
     setUse3D(canRender3D());
   }, []);
 
-  return use3D ? <GraphField3D /> : <GraphField />;
+  // The 2D fallback is already near-static, so `paused` only needs to reach the
+  // 3D scene (where the cursor-follow + drift live).
+  return use3D ? <GraphField3D paused={paused} /> : <GraphField />;
 }

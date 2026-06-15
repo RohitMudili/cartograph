@@ -4,6 +4,8 @@ import {
   ArrowRight,
   GitBranch,
   Graph,
+  Pause,
+  Play,
   ShieldCheck,
   TreeStructure,
 } from "@phosphor-icons/react";
@@ -17,6 +19,7 @@ import { ApiError, api } from "@/lib/api";
 
 import { GraphFieldAuto } from "./GraphFieldAuto";
 import { MagneticButton } from "./MagneticButton";
+import { useMotionPreference } from "./useMotionPreference";
 import { VerifiedAnswer } from "./VerifiedAnswer";
 
 const EASE = [0.23, 1, 0.32, 1] as const;
@@ -122,6 +125,7 @@ function Hero() {
   const [url, setUrl] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { motionEnabled, toggleMotion } = useMotionPreference();
 
   async function index() {
     if (!url.trim() || busy) return;
@@ -149,9 +153,21 @@ function Hero() {
         className="pointer-events-none absolute inset-y-0 right-0 z-0 w-full md:w-[62%]"
         aria-hidden
       >
-        <GraphFieldAuto />
+        <GraphFieldAuto paused={!motionEnabled} />
         <div className="absolute inset-0 bg-gradient-to-r from-bg via-bg/40 to-transparent md:via-transparent" />
       </div>
+
+      {/* Toggle the graph's cursor-following. The graph keeps living (nodes
+          blink) either way. Persisted; honors reduced-motion. */}
+      <button
+        onClick={toggleMotion}
+        aria-pressed={!motionEnabled}
+        title={motionEnabled ? "Stop the graph from following your cursor" : "Let the graph follow your cursor"}
+        className="absolute bottom-5 right-5 z-20 inline-flex items-center gap-1.5 rounded-full border border-border bg-surface/60 px-3 py-1.5 font-mono text-[0.7rem] uppercase tracking-[0.12em] text-muted backdrop-blur-sm transition-colors hover:border-border-hi hover:text-ink active:scale-[0.97] md:bottom-7 md:right-7"
+      >
+        {motionEnabled ? <Pause weight="fill" size={12} /> : <Play weight="fill" size={12} />}
+        {motionEnabled ? "Pause tracking" : "Resume tracking"}
+      </button>
 
       <div className="relative z-10 mx-auto flex min-h-[100dvh] w-full max-w-[1400px] flex-col justify-center px-6 pt-24 md:px-10">
         <div className="w-full max-w-2xl">

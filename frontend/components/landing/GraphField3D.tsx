@@ -79,15 +79,40 @@ function buildGraph(): { nodes: NodeDatum[]; edges: [number, number][] } {
   return { nodes, edges };
 }
 
-function Scene() {
+function Scene({ paused }: { paused: boolean }) {
   const group = useRef<THREE.Group>(null);
   const meshRef = useRef<THREE.InstancedMesh>(null);
   const { nodes, edges } = useMemo(() => buildGraph(), []);
-  const pointer = useThree((s) => s.pointer);
 
-  // Spring-damped parallax target; the group eases toward it (never snaps).
-  const target = useRef({ x: 0, y: 0 });
+  // Track the cursor at the WINDOW level (normalized -1..1), not via R3F's
+  // canvas pointer. The graph layer is `pointer-events-none` so the hero input
+  // stays clickable, which means the canvas itself never sees mouse events. A
+  // window listener makes the graph follow the cursor anywhere on the page.
+  const pointer = useRef({ x: 0, y: 0 });
+  useEffect(() => {
+    if (paused) return;
+    const onMove = (e: PointerEvent) => {
+      pointer.current.x = (e.clientX / window.innerWidth) * 2 - 1;
+      pointer.current.y = -((e.clientY / window.innerHeight) * 2 - 1);
+    };
+    window.addEventListener("pointermove", onMove, { passive: true });
+    return () => window.removeEventListener("pointermove", onMove);
+  }, [paused]);
+
   const dummy = useMemo(() => new THREE.Object3D(), []);
+
+  // On pause: snap the group to its default (centered, untilted) immediately and
+  // zero the pointer, so it stops following the cursor at once and a later resume
+  // starts from default. Node blink keeps running via the always-on render loop.
+  useEffect(() => {
+    if (!paused) return;
+    pointer.current.x = 0;
+    pointer.current.y = 0;
+    if (group.current) {
+      group.current.position.set(0, 0, 0);
+      group.current.rotation.set(0, 0, 0);
+    }
+  }, [paused]);
 
   // Static instance colours (set once).
   const colorAttr = useMemo(() => {
@@ -110,15 +135,27 @@ function Scene() {
 
   useFrame((state, delta) => {
     const t = state.clock.elapsedTime;
-    // Ease parallax toward pointer (subtle: a few degrees of tilt).
-    target.current.x = pointer.y * 0.18;
-    target.current.y = pointer.x * 0.26;
+    const smooth = 1 - Math.exp(-delta * 9);
+
+    // "Pause" stops only the cursor-FOLLOW: when paused the group eases to (and
+    // holds at) its default centered/untilted state and ignores the pointer. The
+    // graph itself keeps living — node bob + pulse run regardless of pause.
+    const p = paused ? { x: 0, y: 0 } : pointer.current;
+
     if (group.current) {
-      group.current.rotation.x += (target.current.x - group.current.rotation.x) * Math.min(1, delta * 2.4);
-      group.current.rotation.y += (target.current.y - group.current.rotation.y) * Math.min(1, delta * 2.4);
+      const g = group.current;
+      const posTargetX = p.x * 4.2;
+      const posTargetY = p.y * 2.6;
+      g.position.x += (posTargetX - g.position.x) * smooth;
+      g.position.y += (posTargetY - g.position.y) * smooth;
+      const rotTargetX = p.y * 0.18;
+      const rotTargetY = p.x * 0.24;
+      g.rotation.x += (rotTargetX - g.rotation.x) * smooth;
+      g.rotation.y += (rotTargetY - g.rotation.y) * smooth;
     }
 
-    // Gentle per-node bob + important-node pulse, written into the instances.
+    // Per-node bob + important-node pulse — always alive (the "blinking"); not
+    // affected by pause.
     const mesh = meshRef.current;
     if (mesh) {
       for (let i = 0; i < nodes.length; i++) {
@@ -176,17 +213,21 @@ function Scene() {
   );
 }
 
-/** Pauses the render loop while the canvas is scrolled out of view. */
+/**
+ * Pauses the render loop only while the canvas is scrolled out of view (to save
+ * CPU). It runs whenever the graph is on-screen, regardless of the motion
+ * toggle: "pause" stops cursor-following, not the node blink, so the loop must
+ * keep running to animate the blink.
+ */
 function FrameGate({ canvasEl }: { canvasEl: React.RefObject<HTMLDivElement | null> }) {
   const setFrameloop = useThree((s) => s.setFrameloop);
 
   useEffect(() => {
     const el = canvasEl.current;
     if (!el || typeof IntersectionObserver === "undefined") return;
-    const io = new IntersectionObserver(
-      ([e]) => setFrameloop(e.isIntersecting ? "always" : "never"),
-      { threshold: 0 },
-    );
+    const io = new IntersectionObserver(([e]) => {
+      setFrameloop(e.isIntersecting ? "always" : "never");
+    });
     io.observe(el);
     return () => io.disconnect();
   }, [canvasEl, setFrameloop]);
@@ -194,7 +235,7 @@ function FrameGate({ canvasEl }: { canvasEl: React.RefObject<HTMLDivElement | nu
   return null;
 }
 
-export function GraphField3D() {
+export function GraphField3D({ paused = false }: { paused?: boolean }) {
   const wrap = useRef<HTMLDivElement>(null);
   return (
     <div
@@ -215,7 +256,7 @@ export function GraphField3D() {
         <ambientLight intensity={1.1} />
         <pointLight position={[6, 4, 8]} intensity={6} color="#fab03c" />
         <pointLight position={[-8, -3, 4]} intensity={4} color="#4f7fd0" />
-        <Scene />
+        <Scene paused={paused} />
         <FrameGate canvasEl={wrap} />
       </Canvas>
     </div>
