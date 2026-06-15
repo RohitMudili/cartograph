@@ -22,6 +22,7 @@ from app.db.models import Repo
 from app.db.session import get_session
 from app.indexer.cloner import CloneError, PrivateRepoError
 from app.indexer.pipeline import index_repo
+from app.query.answerer import Answerer
 
 router = APIRouter(prefix="/api/repos", tags=["repos"])
 
@@ -94,4 +95,55 @@ async def get_repo(
         default_branch=repo.default_branch,
         indexed_at=repo.indexed_at.isoformat() if repo.indexed_at else None,
         stats=repo.stats,
+    )
+
+
+class QuestionRequest(BaseModel):
+    question: str = Field(..., min_length=1)
+
+
+class CitationOut(BaseModel):
+    path: str
+    start_line: int
+    end_line: int
+    verified: bool
+
+
+class AnswerResponse(BaseModel):
+    question: str
+    answer: str
+    route: str
+    answerable: bool
+    fully_verified: bool
+    citations: list[CitationOut]
+    used_nodes: list[int]
+
+
+@router.post("/{repo_id}/questions", response_model=AnswerResponse)
+async def ask_question(
+    repo_id: uuid.UUID,
+    body: QuestionRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> AnswerResponse:
+    repo = await session.get(Repo, repo_id)
+    if repo is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
+
+    ans = await Answerer(session, repo_id).answer(body.question)
+    return AnswerResponse(
+        question=ans.question,
+        answer=ans.text,
+        route=ans.route,
+        answerable=ans.answerable,
+        fully_verified=ans.fully_verified,
+        citations=[
+            CitationOut(
+                path=vc.citation.path,
+                start_line=vc.citation.start_line,
+                end_line=vc.citation.end_line,
+                verified=vc.verified,
+            )
+            for vc in ans.citations
+        ],
+        used_nodes=ans.used_nodes,
     )
