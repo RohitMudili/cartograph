@@ -90,26 +90,70 @@ Until then, develop/test on small repos — fully unblocked.
 
 ---
 
-## What's next (remaining for v1)
+## What's left — detailed, by area
 
-In rough priority / dependency order:
+Honest accounting (✅ done · ⚠️ partial · ❌ not built). The "answer one question"
+core is solid; the "full query intelligence + streaming + agent fleet + the big
+UI views" is the bulk of remaining work.
 
-- **Frontend so far:** ✅ home (paste-a-repo) + ✅ Chat console (working, demoed
-  live). Remaining UI: Mission Control + Atlas graph view.
-1. **Answer quality (task #20)** — index markdown/README (DOC node per section) +
-   question-type-aware prompting. A real, observed gap: onboarding answers are
-   correct+cited but read like flat API docs. #1 (markdown indexing) is a small
-   isolated win, landable anytime. See PLAN.md §2.3 Answer Quality.
-2. **Multi-agent LangGraph fleet** — planner → explorers → synthesizer → critic;
-   GraphRAG community summaries; WebSocket event stream. The "watch agents
-   explore" centerpiece; feeds Mission Control.
-3. **Atlas + Mission Control UI** — the remaining views (replay-first).
-4. **Eval harness** — golden Q&A + citation precision/recall + answer-quality
-   scoreboard (the credibility moat; also grades task #20).
-5. **GitHub OAuth** (task #15) — private/org repo access; PLAN.md §9A.
-6. **Deploy + demo video + writeup.**
+### Backend  (answer-one-question core ~95% · full scope ~50%)
 
-Est. ~3 weeks. The core value (cited Q&A) is already demoable in the browser today.
+Query / answer layer:
+- ❌ **Router** (local / global / escalate) — every question forces `local` today
+- ❌ **Global route** — big-picture answers from community summaries
+- ❌ **Escalation route + write-back** — the "graph is a learning cache" loop
+- ❌ **Answer quality (task #20)** — markdown/README indexing + question-type prompts
+
+Indexing layer:
+- ❌ **Markdown / docs / config extractors** (Python-only today — no README indexed)
+- ❌ **TypeScript / JavaScript extractor** (v1 was meant to cover TS/JS too)
+- ❌ **Community detection (Leiden) + hierarchical summaries** (GraphRAG big-picture layer)
+- ❌ **Incremental re-indexing** (diff-based; today re-index = full re-run / skip-if-indexed)
+- ⚠️ **Metrics** — LOC/fan-in/out done; git churn + graph centrality not computed
+
+Production shape:
+- ❌ **Background worker + job queue** (indexing runs inline in the request today)
+- ❌ **WebSocket event stream** (`/ws/runs/{id}`) — backbone for fleet + Mission Control
+- ❌ **`agent_events` table + event bus** (persisted replay/stream log)
+- ❌ **Graph-slice API** (`GET /repos/{id}/graph`) — what Atlas queries
+- ❌ **Walkthrough generation** (`GET /repos/{id}/walkthrough`)
+- ❌ **GitHub OAuth** (task #15 — designed §9A, not built)
+- ⚠️ **Budget caps** — LLM rate limiter done; per-run hard $ cap w/ graceful abort not wired
+
+### Frontend  (~38%)
+
+- ✅ App scaffold + design tokens · ✅ Home (paste-a-repo) · ✅ Chat console (working)
+- ❌ **Mission Control** (`/r/[repo]/run`) — live agent roster, territory map, findings
+  feed, cost ticker, replay scrubber. The visual centerpiece. Needs the event stream.
+- ❌ **Atlas** (`/r/[repo]/atlas`) — force-directed / semantic-zoom graph + inspector
+- ❌ **Code panel** — clicking a Chat citation chip should open source at the lines
+- ❌ **Walkthrough view** · ❌ **Landing page** (brand surface; `/` is the app home today)
+- ❌ **App shell** — icon rail + telemetry drawer (only a minimal Chat top bar exists)
+- ❌ **Shared infra** — WebSocket event store (Zustand), replay-from-fixtures harness, Storybook
+- ❌ **Hardening** — skeletons, error boundaries, responsive/mobile, full a11y pass
+
+### Agent fleet  (0% — all spec, no code)
+
+The whole PLAN §2.2 topology is unbuilt. Foundation exists (`langgraph` installed,
+provider-agnostic `llm.py` ready), but none of the fleet itself:
+- ❌ LangGraph supervisor graph (planner → explorers → synthesizer → critic → librarian)
+- ❌ Planner / Explorer (parallel) / Synthesizer / Critic agents
+- ❌ Librarian (writes verified findings back to the graph)
+- ❌ Agent tools (`read_file` / `get_neighbors` / `search_graph` / `grep`)
+- ❌ Inter-agent Pydantic schemas · run budgets (tool-call caps, token budget, timeouts)
+- ❌ Event emission → event log → WebSocket → Mission Control
+
+> **Key dependency:** agent fleet → event stream (backend) → Mission Control (frontend)
+> are **one connected feature** — none demos without the other two. Replay-first design
+> lets the UI build against recorded event logs first, but the fleet still must be built.
+
+### Cross-cutting
+- ❌ **Eval harness** — golden Q&A + citation precision/recall + answer-quality scoreboard
+  (credibility moat; also grades task #20)
+- ❌ **Deploy + demo video + writeup**
+
+**Overall v1 ≈ 45-50%.** Core value (cited Q&A) is demoable in the browser today;
+the agent fleet is the single biggest remaining chunk.
 
 ---
 

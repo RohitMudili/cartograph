@@ -733,41 +733,49 @@ private — connect GitHub to index it" 403, not a cryptic clone failure.
 
 Each week ends in something demoable. Cut scope, never quality of what ships.
 
-### Week 1 — The spine (static graph + local Q&A)
-- Repo scaffolding, docker-compose, CI skeleton.
-- Cloner + tree-sitter extraction (Python first) → nodes/edges in Postgres.
-- Batched Flash node summaries + embeddings; hybrid retrieval (BM25 + dense + 1-hop).
-- Minimal local-route Q&A with **citation verification from day one**.
-- Ugly-but-real CLI/REST demo; first cost measurements logged.
-- **Milestone:** ask `fastapi` "where are dependency overrides handled?" → correct,
-  verified citation.
+> **Progress (2026-06-15, ✅ done · ⚠️ partial · ❌ not built):** Week 1 essentially
+> DONE and proven on live data; the Chat UI from Week 3 is also built early. Week 2
+> (agent fleet + GraphRAG) is 0%. Overall v1 ≈ 45-50%. Live working log: `STATUS.md`.
 
-### Week 2 — The fleet (multi-agent enrichment + GraphRAG)
-- LangGraph topology: planner → parallel explorers → synthesizer → critic → librarian.
-- Agent tools, structured findings, write-back, run budgets, event log.
-- Leiden communities + hierarchical summaries; global route; router; escalation route
-  with write-back.
-- TypeScript grammar support.
-- **Milestone:** full index run of `fastapi` end-to-end with event log; global question
-  answered from community summaries; measured index cost.
+### Week 1 — The spine (static graph + local Q&A) — ✅ DONE
+- ✅ Repo scaffolding, docker-compose, CI skeleton.
+- ✅ Cloner + tree-sitter extraction (Python) → nodes/edges in Postgres.
+- ✅ Batched node summaries + embeddings; hybrid retrieval (BM25 + dense + 1-hop).
+- ✅ Local-route Q&A with **citation verification** (verified on real data).
+- ✅ REST demo + first real cost (LangSmith). Now running on Supabase.
+- ✅ **Milestone hit:** asked pybktree real questions → correct, verified citations.
 
-### Week 3 — The face (UI)
-- Next.js app: Mission Control (live WS events), Atlas (semantic-zoom graph), Chat
-  (streamed answers, citation chips → code panel, transparency strip).
-- Onboarding walkthrough generation + overlay.
-- Design pass with the installed design skills; dark theme; the screen-recordable demo.
-- **Milestone:** the 2-minute demo recording exists.
+### Week 2 — The fleet (multi-agent enrichment + GraphRAG) — ❌ NOT STARTED
+- ❌ LangGraph topology: planner → parallel explorers → synthesizer → critic → librarian.
+- ❌ Agent tools, structured findings, write-back, run budgets, event log.
+- ❌ Leiden communities + hierarchical summaries; global route; router; escalation
+  route with write-back.
+- ❌ TypeScript grammar support.
+- ❌ **Milestone:** full index run with event log; global question from community summaries.
 
-### Week 4 — The proof (evals, hardening, launch)
-- Eval datasets (3 repos), full harness, results history, CI smoke subset, README
-  table + cost chart from real data.
-- Incremental re-index; security hardening checklist (§9); rate limits/budget caps.
-- Deploy live demo with 3 pre-indexed repos + "index your own" (budget-capped).
-- **Writeup** (the actual portfolio artifact): architecture decisions, the
-  static-graph insight, the cost economics, the critic/verification design,
-  what didn't work. Publish: GitHub README, blog post, Show HN / r/MachineLearning,
-  LinkedIn, X thread with the demo video.
-- **Milestone:** public URL + repo + writeup + video.
+### Week 3 — The face (UI) — ⚠️ PARTIAL (Chat done; the big views not)
+- ⚠️ Next.js app: ✅ **Chat** (working — threaded Q&A, verified citation chips,
+  transparency strip; ❌ code panel on chip click). ❌ **Mission Control** (live WS).
+  ❌ **Atlas** (semantic-zoom graph).
+- ❌ Onboarding walkthrough generation + overlay.
+- ✅ Design tokens (DESIGN.md, dark instrument-panel) wired; ❌ full design/polish pass;
+  ❌ the screen-recordable demo.
+- ❌ **Milestone:** the 2-minute demo recording.
+
+### Week 4 — The proof (evals, hardening, launch) — ❌ NOT STARTED
+- ❌ Eval datasets, full harness, results history, CI smoke subset, README table + cost chart.
+- ❌ Incremental re-index; security hardening checklist (§9); per-run budget cap.
+  (✅ deny-all RLS on the DB; ✅ LLM rate limiter.)
+- ❌ Deploy live demo (Supabase DB is live; app not deployed).
+- ❌ **Writeup** + publish.
+- ❌ **Milestone:** public URL + repo + writeup + video.
+
+### Net remaining, by area (see STATUS.md for the itemized checklist)
+- **Backend:** router/global/escalate routes, communities, markdown+TS extractors,
+  worker+queue, WebSocket event stream, graph/walkthrough APIs, OAuth, incremental re-index.
+- **Frontend:** Mission Control, Atlas, code panel, landing, app shell + drawer, event store.
+- **Agent fleet:** the entire §2.2 topology (0% — foundation only).
+- **Cross-cutting:** eval harness, deploy/demo/writeup.
 
 ### Explicit cut-line (if behind schedule)
 Cut in this order: TypeScript support → onboarding walkthrough overlay → semantic
