@@ -1,0 +1,89 @@
+@import "tailwindcss";
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Cartograph design tokens — "instrument panel at night" (see DESIGN.md).
+   Dark-only v1. OKLCH throughout. Amber telemetry on neutral black glass.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+@theme {
+  /* surfaces — pure neutral black glass; NO warm tint in backgrounds */
+  --color-bg: oklch(0.1 0 0);
+  --color-surface: oklch(0.15 0.004 91.3);
+  --color-surface-2: oklch(0.13 0.003 91.3);
+  --color-border: oklch(0.28 0.008 91.3);
+  --color-border-hi: oklch(0.4 0.02 91.3);
+
+  /* ink */
+  --color-ink: oklch(0.93 0.012 91.3);
+  --color-muted: oklch(0.65 0.015 91.3);
+  --color-faint: oklch(0.48 0.012 91.3);
+
+  /* brand */
+  --color-primary: oklch(0.84 0.165 91.3);
+  --color-on-primary: oklch(0.15 0.03 91.3);
+  --color-accent: oklch(0.62 0.13 230);
+  --color-on-accent: oklch(0.97 0.005 230);
+
+  /* semantic state (always paired with icon/label, never color alone) */
+  --color-verified: oklch(0.72 0.13 150);
+  --color-rejected: oklch(0.6 0.16 25);
+  --color-pending: oklch(0.7 0.1 91.3);
+
+  /* typography */
+  --font-sans: var(--font-plex-sans), system-ui, sans-serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, monospace;
+
+  /* radii */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+}
+
+/* Amber wash for selected rows/chips; glow is the only shadow vocabulary. */
+:root {
+  --primary-dim: oklch(0.84 0.165 91.3 / 0.14);
+  --glow-live: 0 0 12px oklch(0.84 0.165 91.3 / 0.25);
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  background: var(--color-bg);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Live numerals (cost, tokens, line numbers) never jitter as they tick. */
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Focus ring: amber, per DESIGN.md --glow-focus. */
+:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 2px var(--color-bg),
+    0 0 0 4px var(--color-primary);
+}
+
+::selection {
+  background: var(--primary-dim);
+}
+
+/* Thin instrument-panel scrollbars. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border) transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
