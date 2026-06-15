@@ -1,0 +1,20 @@
+# Cursor rules — Cartograph
+
+READ `AGENTS.md` AT THE REPO ROOT FIRST. It is the full onboarding guide:
+architecture, conventions, critical gotchas, how to run it, and what's left to
+build. Then read `STATUS.md` for current state.
+
+Key rules (full detail in AGENTS.md):
+- Backend: Python 3.12, FastAPI, async SQLAlchemy 2.0, uv. Run the FULL gate before
+  committing: `ruff check` + `ruff format --check` + `pyright` + `pytest -m "not network"`.
+- Frontend: Next.js 16 / React 19 / Tailwind v4 — NOT older versions. `params` is a
+  Promise (await it). Tailwind config is `@theme` in globals.css, no tailwind.config.ts.
+  Read frontend/node_modules/next/dist/docs/ before writing Next-specific code.
+- Model IDs/pricing live ONLY in backend/app/config.py; we maintain NO price tables
+  (cost comes from LangSmith). Don't edit model IDs from memory.
+- Local dev DB is Supabase (needs internet); DATABASE_URL must be postgresql+asyncpg://.
+- .env files are gitignored secrets — never commit them.
+- Verify external library APIs (LangChain, Gemini, Next.js, SQLAlchemy) against their
+  docs before coding — versions are current and differ from older training data.
+- No "Co-Authored-By" trailer in commits.
+- Don't put build-phase labels ("Phase 2/3") in code comments.

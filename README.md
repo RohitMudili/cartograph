@@ -13,10 +13,16 @@ question after the first one.
 
 ---
 
-> **Status: early construction.** The backend spine is being built phase by phase.
-> See [`PLAN.md`](PLAN.md) for the architecture, [`FRONTEND.md`](FRONTEND.md) for
-> the UI plan, and [`DESIGN.md`](DESIGN.md) / [`PRODUCT.md`](PRODUCT.md) for the
-> design system and product strategy.
+> **🤖 AI agents / new contributors: start with [`AGENTS.md`](AGENTS.md).** It's
+> written to get you productive in one read — conventions, gotchas, how to run it,
+> and what's left. Then [`STATUS.md`](STATUS.md) for the live "where we are" log.
+
+> **Status:** the backend "ask a question → get a verified cited answer" core works
+> end-to-end (proven on live data), and a Chat UI exists. The multi-agent fleet and
+> the graph/Mission-Control views are not built yet — see [`STATUS.md`](STATUS.md)
+> for the itemized breakdown. Architecture: [`PLAN.md`](PLAN.md); UI plan:
+> [`FRONTEND.md`](FRONTEND.md); design/product: [`DESIGN.md`](DESIGN.md) /
+> [`PRODUCT.md`](PRODUCT.md).
 
 ## How it works
 

@@ -1,0 +1,142 @@
+# ARCHITECTURE.md — Code Navigation Map
+
+> Companion to `AGENTS.md`. This traces the two core flows through the **actual
+> files** so you can navigate the codebase without reading everything. File paths
+> are clickable references; follow them.
+
+---
+
+## Flow 1: Indexing a repo (`POST /api/repos`)
+
+What happens when a user pastes a repo URL, in execution order:
+
+```
+backend/app/api/repos.py          create_index()  — the HTTP entry
+  └─▶ indexer/pipeline.py         index_repo()     — orchestrates everything
+        ├─ _get_or_create_repo()  — idempotent: if already INDEXED, returns instantly
+        ├─ indexer/cloner.py      clone_repo()     — sandboxed git clone (security-hardened)
+        ├─ build_graph_from_workspace():
+        │    ├─ _iter_source_files()               — walk files, skip noise dirs,
+        │    │                                        match EXTRACTORS by extension (.py only today)
+        │    ├─ indexer/parser/python.py  extract_python()  — tree-sitter → RawSymbol/Import/Call
+        │    │     (produces FileExtract objects defined in parser/types.py)
+        │    └─ indexer/graph_builder.py  GraphBuilder.build()
+        │          — resolves cross-file edges, computes metrics, bulk-inserts
+        │            nodes/edges/chunks to Postgres
+        └─ indexer/summarizer.py  Summarizer.run()  — IF an LLM key is configured:
+               — bottom-up LLM summaries per symbol + pgvector embeddings
+               — gated on settings.llm_available (skips cleanly with no key)
+```
+
+**Key files & what to know:**
+- `pipeline.py` — the conductor. Sets repo status (cloning→parsing→summarizing→indexed),
+  records an `IndexRun`, cleans the workspace in a `finally`.
+- `cloner.py` — **security-critical.** Blocks `file://`, disables hooks, size caps,
+  `GIT_TERMINAL_PROMPT=0` for fast-fail on private repos. Don't weaken it.
+- `parser/python.py` — pure (no DB). Walks the tree-sitter AST. To **add a language**:
+  write a new extractor producing the same `FileExtract` shape, register it in
+  `pipeline.py`'s `EXTRACTORS` dict. (Adding markdown is task #20 — see STATUS.md.)
+- `parser/types.py` — the `RawSymbol`/`RawImport`/`RawCall`/`FileExtract` dataclasses.
+  The decoupling between parser output and ORM is deliberate (parsers stay testable).
+- `graph_builder.py` — where the per-file extracts become a connected graph.
+  Cross-file edge resolution (imports/calls/inherits) with **confidence scores**
+  (dynamic dispatch gets low confidence). Bulk inserts via SQLAlchemy 2.0 patterns.
+- `summarizer.py` — bottom-up (leaves first so containers can summarize from
+  children's summaries). Concurrent but bounded by a semaphore.
+
+---
+
+## Flow 2: Answering a question (`POST /api/repos/{id}/questions`)
+
+```
+backend/app/api/repos.py          ask_question()   — HTTP entry
+  └─▶ query/answerer.py           Answerer.answer()
+        ├─ query/retrieval.py     Retriever.retrieve()  — HYBRID retrieval:
+        │     ├─ _bm25_node_ids()   — keyword search over chunk.tsv (plainto_tsquery)
+        │     ├─ _dense_node_ids()  — pgvector cosine over node summary embeddings
+        │     │                        (calls agents/llm.py embed_query)
+        │     ├─ _rrf_merge()        — reciprocal-rank fusion of the two signals
+        │     └─ _neighbours()       — 1-hop graph expansion (callers/callees/etc.)
+        ├─ _synthesize()           — agents/llm.py reasoning().complete_structured()
+        │                            LLM answers from retrieved context ONLY, returns
+        │                            structured answer + citations (Pydantic)
+        └─ query/verifier.py       CitationVerifier.verify_all()  ← THE DIFFERENTIATOR
+              — checks each citation against the actual indexed source (chunks):
+                path exists? lines overlap a chunk? quoted snippet really there?
+              — on failure: ONE regeneration attempt naming the violations, then
+                strip bad citations + flag unverified. Never shows a fake citation.
+```
+
+**Key files & what to know:**
+- `retrieval.py` — three signals fused. Returns `RetrievedItem`s carrying exact
+  `file:line` (so citations are mechanical). RRF is rank-based/scale-free (robust
+  when mixing a BM25 score with a cosine distance).
+- `answerer.py` — orchestrates retrieve→synthesize→verify→(regen). The system prompt
+  is here; it optimizes for grounded+cited (which is why answers are accurate but
+  dry — improving this is task #20).
+- `verifier.py` — **the trust layer.** Verifies against the `chunks` table (stored
+  source slices with exact line ranges) — no re-clone needed. This is what makes
+  the product's "verified citations" claim real.
+
+---
+
+## The LLM layer (`agents/llm.py`) — every model call goes through here
+
+- `reasoning()` / `fast()` — two tiers (smart vs cheap-high-volume).
+- `complete()` / `complete_structured(schema)` — text or Pydantic-validated output,
+  provider-uniform via LangChain `.with_structured_output`.
+- `embed_texts()` / `embed_query()` — embeddings (dimension pinned to `EMBEDDING_DIM`).
+- `UsageLedger` — records token counts; dollar cost is filled from LangSmith (we
+  keep no price tables).
+- `_RateLimiter` — token-bucket pacing to `LLM_RPM` so we don't 429 on free tier.
+- Provider is chosen by the `"provider:model"` strings in `config.py` / `.env`.
+
+To swap providers or models: change the strings in `.env` (`REASONING_MODEL`,
+`FAST_MODEL`, `EMBEDDING_MODEL`). No code change.
+
+---
+
+## The database (`db/`)
+
+- `models.py` — the ORM. `Repo → Node → Edge → Chunk → IndexRun`. SQLAlchemy 2.0
+  typed (`Mapped[...]`). `communities`/`agent_events`/`questions` tables exist but
+  are unused until later phases.
+- `session.py` — async engine/session. **Contains the Supabase pgbouncer fix**
+  (`statement_cache_size=0`). `db_session` test fixture rolls back.
+- `enums.py` — native Postgres enums (stored as UPPERCASE member names).
+- `migrations/` — alembic, sequential `0001`..`0005`, head = `0005`. pgvector enabled
+  in 0001; graph schema in 0002; RLS deny-all in 0004; chunk tsvector in 0005.
+
+---
+
+## Frontend (`frontend/`)
+
+```
+app/layout.tsx        — root layout, IBM Plex fonts as CSS vars
+app/globals.css       — design tokens (@theme, OKLCH) — the "instrument panel" palette
+app/page.tsx          — home: paste a repo URL → index → route to chat
+app/r/[repo]/chat/
+  page.tsx            — server component, awaits params (Next 16!), renders ↓
+  ChatConsole.tsx     — the Chat UI (client): threads, citation chips, transparency strip
+components/ui.tsx     — shared vocabulary: StatusChip, VerifyBadge, RouteBadge, Button
+lib/api.ts            — typed client mirroring the backend response models
+```
+
+The Chat UI calls `lib/api.ts` → the FastAPI backend. Verified citations render as
+amber chips; unverified ones render struck-through in red (the honesty rule).
+
+**Not built yet:** Mission Control (`/r/[repo]/run`), Atlas (`/r/[repo]/atlas`),
+the code panel, the landing page, the app shell/drawer. See `FRONTEND.md` for specs
+and `STATUS.md` for status.
+
+---
+
+## Where the spec lives for things not yet built
+
+- **Agent fleet** (planner/explorers/synthesizer/critic) → `PLAN.md §2.2`. Goes in
+  `backend/app/agents/`. `langgraph` is installed; `llm.py` is ready for it.
+- **Query router / global / escalate routes** → `PLAN.md §2.3`. Goes in `query/`.
+- **Mission Control / Atlas UI** → `FRONTEND.md §5.2/5.3`, `DESIGN.md`.
+- **WebSocket event stream** (the backbone the fleet + Mission Control need) →
+  `PLAN.md §4.3`. Not built; nothing streams yet.
+- **Eval harness** → `PLAN.md §6`. Goes in `evals/`.
