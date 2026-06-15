@@ -128,8 +128,9 @@ components/
   landing/              — the landing page (see "Landing flow" below)
     Landing.tsx         — composes the whole page (Nav, Hero, Proof, Pipeline, Economics, CTA, Footer)
     GraphField.tsx      — 2D canvas hero graph (the always-safe fallback)
-    GraphField3D.tsx    — 3D R3F hero graph (z-layered nodes, edges, parallax)
+    GraphField3D.tsx    — 3D R3F hero graph (z-layered nodes, edges, cursor-follow)
     GraphFieldAuto.tsx  — picks 3D vs 2D per device; lazy-loads Three.js (ssr:false)
+    useMotionPreference.ts — hero motion on/off (localStorage + reduced-motion)
     VerifiedAnswer.tsx  — the live "answer types in, citation resolves to verified" terminal
     MagneticButton.tsx  — cursor-leaning CTA (motion values, not state)
   auth/AuthMenu.tsx     — nav sign-in button → account chip + sign-out
@@ -153,7 +154,9 @@ app/page.tsx                       → <Landing />
 components/landing/Landing.tsx      — "use client"; composes the sections:
   Nav        — wordmark + Source link + <AuthMenu/>
   Hero       — asymmetric split: copy + repo input (left), graph (right)
-    └─ GraphFieldAuto → GraphField3D (desktop+WebGL) | GraphField (else)
+    ├─ GraphFieldAuto → GraphField3D (desktop+WebGL) | GraphField (else)
+    │    (paused prop = !motionEnabled, from useMotionPreference)
+    ├─ "Pause tracking" toggle (bottom-right) → toggleMotion()
     └─ MagneticButton — the "Map it" CTA; on submit calls api.indexRepo → /r/{id}/chat
   Proof      — claim (left) + <VerifiedAnswer/> live terminal (right)
   Pipeline   — connected Parse → Enrich → Answer flow (Phosphor icons)
@@ -167,12 +170,26 @@ components/landing/Landing.tsx      — "use client"; composes the sections:
   (also the SSR output, so no hydration mismatch), then upgrades to `GraphField3D`
   **only** on desktop with usable WebGL and motion allowed. `GraphField3D` is
   `next/dynamic({ ssr: false })`, so the ~150KB Three.js bundle never touches SSR
-  or the LCP path; `/` still prerenders as static.
+  or the LCP path; `/` still prerenders as static. Forwards the `paused` prop.
 - `GraphField3D.tsx` — React Three Fiber. Instanced node meshes, edge `lineSegments`,
-  spring-damped pointer parallax (eased toward `useThree().pointer`, never 1:1),
-  amber important-node glints. A `FrameGate` pauses the render loop via
-  `IntersectionObserver` when scrolled out of view; DPR capped. **This is the engine
-  the future Mission Control live graph reuses** — same renderer, camera, primitives.
+  amber important-node glints, and a per-node bob/pulse (the "blink") that always
+  runs. **Cursor-follow:** the whole graph translates toward the cursor (plus a
+  light tilt) — the pointer is tracked at the **window** level, NOT `useThree().pointer`,
+  because the graph layer is `pointer-events-none` (so it never steals clicks from
+  the hero input) and therefore the canvas itself receives no mouse events.
+  - `paused` (from `useMotionPreference`) stops ONLY the cursor-follow: on pause
+    the group snaps to its default centered/untilted state immediately and ignores
+    the pointer; the node blink keeps running, so the graph stays alive. Resuming
+    starts from default.
+  - `FrameGate` pauses the render loop via `IntersectionObserver` when scrolled
+    out of view (runs whenever on-screen, regardless of the pause toggle, since
+    the blink needs frames). DPR capped.
+  - **This is the engine the future Mission Control live graph reuses** — same
+    renderer, camera, primitives.
+- `useMotionPreference.ts` — owns the hero-motion on/off state. Persists the
+  user's choice to `localStorage` (`cartograph:hero-motion`); with no stored
+  choice it defaults to the inverse of `prefers-reduced-motion` (off if the user
+  prefers reduced motion). The hero's "Pause tracking" pill calls `toggleMotion`.
 - `VerifiedAnswer.tsx` — motivated motion: on `whileInView`, the answer types in and
   a citation resolves `checking` → `verified`, dramatizing the product's core claim.
   Reduced-motion shows the settled end-state immediately.

@@ -36,7 +36,8 @@ app/
 proxy.ts                  Next 16 middleware — refreshes the Supabase session cookie
 components/
 ├── ui.tsx                shared status vocabulary (StatusChip, badges, Button)
-├── landing/              Landing + GraphField (2D) / GraphField3D (R3F) / GraphFieldAuto,
+├── landing/              Landing + GraphField (2D) / GraphField3D (R3F, cursor-follow) /
+│                         GraphFieldAuto, useMotionPreference (pause-tracking toggle),
 │                         VerifiedAnswer (live citation terminal), MagneticButton
 └── auth/AuthMenu.tsx     nav sign-in → account chip
 lib/
@@ -53,6 +54,15 @@ coarse-pointer, reduced-motion, or no-WebGL. Three.js is lazy-loaded
 (`next/dynamic`, `ssr: false`) so it never touches SSR or the LCP path. The graph
 is illustrative; the same R3F engine is the seed for the future Mission Control
 live graph.
+
+The 3D graph **follows the cursor** (the whole graph translates toward the
+pointer, with a light depth tilt), tracked at the `window` level because the
+graph layer is `pointer-events-none` (it must not steal clicks from the hero
+input, so the canvas never receives mouse events itself). A **"Pause tracking"**
+pill in the hero corner stops the follow and snaps the graph to its default
+centered state; the nodes keep their gentle blink. The choice persists via
+`useMotionPreference` (localStorage) and defaults to off under
+`prefers-reduced-motion`.
 
 ### Google sign-in
 

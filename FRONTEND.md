@@ -119,6 +119,14 @@ Economics / CallToAction / Footer`):
    the 2D canvas `GraphField` everywhere else (`GraphFieldAuto` gates it; Three.js
    is lazy-loaded `ssr:false`). It is *illustrative*, not a live replay — the real
    replay-on-Mission-Control idea waits on the event stream + fleet.
+   - **Cursor interaction:** the 3D graph follows the cursor (the whole graph
+     translates toward the pointer, plus a light depth tilt), tracked at the
+     `window` level (the canvas is `pointer-events-none`). Nodes always blink
+     (a gentle bob + pulse).
+   - **"Pause tracking" pill** (hero bottom-right): stops the cursor-follow and
+     snaps the graph to its default centered state; nodes keep blinking. The
+     choice persists (`useMotionPreference` → localStorage) and defaults to off
+     when `prefers-reduced-motion` is set.
 2. **Proof** — replaces the eval cost chart (no eval data yet). A claim on the left
    and `VerifiedAnswer` on the right: a live terminal where the answer types in and
    a citation resolves `checking → verified`. This carries beat 3's "verification
@@ -249,7 +257,8 @@ components/                                                         (planned vs 
 ├── ui.tsx         # ✅ shared vocabulary (StatusChip, VerifyBadge, RouteBadge, Button)
 │                  #    (kept as one file for now, not a ui/ dir of shadcn primitives)
 ├── landing/       # ✅ BUILT — Landing (composes the page), GraphField (2D),
-│   GraphField3D (R3F), GraphFieldAuto (gate+lazy), VerifiedAnswer (live cite
+│   GraphField3D (R3F, cursor-follow), GraphFieldAuto (gate+lazy),
+│   useMotionPreference (pause-tracking toggle state), VerifiedAnswer (live cite
 │   terminal), MagneticButton. NOTE: the originally-planned ReplayEmbed/CostChart/
 │   VerificationStrip/EvalTable were replaced by the graph hero + VerifiedAnswer
 │   (their data — real replays, eval results — does not exist yet).

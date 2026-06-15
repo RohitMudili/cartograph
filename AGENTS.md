@@ -88,7 +88,8 @@ cartograph/
     ├── proxy.ts        ★ Next 16's renamed middleware — refreshes Supabase session
     ├── components/
     │   ├── ui.tsx           shared vocabulary (StatusChip, badges, Button)
-    │   ├── landing/         Landing.tsx + GraphField(2D)/GraphField3D(R3F)/GraphFieldAuto,
+    │   ├── landing/         Landing.tsx + GraphField(2D)/GraphField3D(R3F,cursor-follow)/
+    │   │                    GraphFieldAuto, useMotionPreference (pause toggle),
     │   │                    VerifiedAnswer (live cite terminal), MagneticButton
     │   └── auth/AuthMenu.tsx   nav sign-in → account chip
     └── lib/
@@ -152,7 +153,12 @@ These are the things that have actually bitten us. Internalize them.
     `next/dynamic({ ssr: false })` so Three.js stays off SSR/LCP; `GraphFieldAuto`
     falls back to the 2D `GraphField` on mobile / coarse-pointer / reduced-motion /
     no-WebGL. Keep that gate — never import `GraphField3D` directly into a server
-    component or unconditionally.
+    component or unconditionally. The graph **follows the cursor** via a `window`-level
+    pointer listener (NOT `useThree().pointer`): the graph layer is `pointer-events-none`
+    so it never steals clicks, which means the canvas gets no mouse events of its
+    own. A "Pause tracking" toggle (`useMotionPreference`, persisted to localStorage,
+    reduced-motion-aware) stops only the cursor-follow — node blink keeps running.
+    See `ARCHITECTURE.md` Flow 3 for the details.
 15. **Reveal animations must degrade visible.** The hero intro animates transform +
     blur only (opacity stays 1) so content is legible without JS / mid-animation /
     on a frozen frame. Don't gate content visibility behind a JS-driven `opacity:0`
