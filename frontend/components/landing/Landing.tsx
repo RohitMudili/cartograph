@@ -15,7 +15,7 @@ import { AuthMenu } from "@/components/auth/AuthMenu";
 import { Spinner } from "@/components/ui";
 import { ApiError, api } from "@/lib/api";
 
-import { GraphField } from "./GraphField";
+import { GraphFieldAuto } from "./GraphFieldAuto";
 import { MagneticButton } from "./MagneticButton";
 import { VerifiedAnswer } from "./VerifiedAnswer";
 
@@ -149,7 +149,7 @@ function Hero() {
         className="pointer-events-none absolute inset-y-0 right-0 z-0 w-full md:w-[62%]"
         aria-hidden
       >
-        <GraphField />
+        <GraphFieldAuto />
         <div className="absolute inset-0 bg-gradient-to-r from-bg via-bg/40 to-transparent md:via-transparent" />
       </div>
 
