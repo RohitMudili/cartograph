@@ -3,17 +3,35 @@
 _Working log for picking up where we left off. Not the plan (see PLAN.md) — this
 is "where are we right now and what's next."_
 
-**Last updated:** 2026-06-15
+**Last updated:** 2026-06-15 (end of session — dev servers stopped, clean checkpoint)
 
 ---
 
-## 🎉 Week 1 is COMPLETE — the backend spine works end to end
+## 🎉 Working product — backend spine + a usable UI
 
-You can now: **paste a repo → it's indexed → ask a question → get an answer
-grounded in real code with VERIFIED `file:line` citations.** Proven on live data
-against Supabase. This is the core product value, working.
+You can now do the whole loop **in a browser**: paste a repo → it's indexed → ask
+a question → get an answer grounded in real code with VERIFIED `file:line`
+citations, in the dark "instrument panel" UI. Proven live against Supabase. The
+core product value is working and clickable.
 
 ### Done & verified
+
+**Frontend (this session):**
+
+- **Next.js 16 + React 19 + Tailwind v4** app in `frontend/`. DESIGN.md tokens
+  wired (OKLCH instrument-panel palette, IBM Plex). Verified against the bundled
+  Next 16 docs (params-as-Promise etc.).
+- **Home (`/`)** — paste a GitHub URL → index → route to chat. Honest errors
+  (private 403, backend unreachable). Re-indexing an already-indexed repo is
+  idempotent (returns instantly → straight to chat).
+- **Chat console (`/r/[repo]/chat`)** — research-console UI: threaded Q&A, inline
+  citation chips (verified=amber / unverified=rejected+strikethrough),
+  transparency strip (route · N/M verified · nodes consulted), repo-status
+  polling, live elapsed-time pending indicator (free-tier ~15s is paced, shown
+  honestly). **Demoed live: a real onboarding question returned 4/4 verified
+  citations across multiple files.**
+
+**Backend:**
 
 - **Foundations** — FastAPI, async SQLAlchemy, health/readiness, Docker, CI.
 - **Static indexer** — sandboxed cloner (private-repo fast-fail), tree-sitter
@@ -45,7 +63,20 @@ questions through the full retrieve→synthesize→verify chain:
 - *"How does BKTree add items and search for nearby matches?"* → accurate
   two-method explanation incl. the pruning logic, **2 VERIFIED** citations.
 
-### Tests: 46 passing, CI green. Lint / format / pyright all clean.
+### Tests: backend 46 passing, CI green. Frontend: tsc + eslint + build clean.
+
+### Run it locally (two terminals)
+
+```bash
+# backend  (needs backend/.env with Supabase + Gemini keys)
+cd backend && uv run uvicorn app.main:app --port 8000
+# frontend (needs frontend/.env.local — copy from .env.local.example)
+cd frontend && npm run dev    # → http://localhost:3000
+```
+
+pybktree is already indexed in Supabase, so pasting
+`https://github.com/benhoyt/pybktree` jumps straight to chat for an instant demo.
+_(Dev servers are currently STOPPED.)_
 
 ---
 
