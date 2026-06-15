@@ -112,22 +112,101 @@ To swap providers or models: change the strings in `.env` (`REASONING_MODEL`,
 ## Frontend (`frontend/`)
 
 ```
-app/layout.tsx        — root layout, IBM Plex fonts as CSS vars
-app/globals.css       — design tokens (@theme, OKLCH) — the "instrument panel" palette
-app/page.tsx          — home: paste a repo URL → index → route to chat
+app/layout.tsx          — root layout, IBM Plex fonts as CSS vars
+app/globals.css         — design tokens (@theme, OKLCH) — the "instrument panel" palette
+app/page.tsx            — renders <Landing /> (the marketing surface)
 app/r/[repo]/chat/
-  page.tsx            — server component, awaits params (Next 16!), renders ↓
-  ChatConsole.tsx     — the Chat UI (client): threads, citation chips, transparency strip
-components/ui.tsx     — shared vocabulary: StatusChip, VerifyBadge, RouteBadge, Button
-lib/api.ts            — typed client mirroring the backend response models
+  page.tsx              — server component, awaits params (Next 16!), renders ↓
+  ChatConsole.tsx       — the Chat UI (client): threads, citation chips, transparency strip
+app/auth/               — Google sign-in routes (see "Auth flow" below)
+  callback/route.ts     — PKCE code → session exchange
+  signout/route.ts      — POST-only sign-out
+  auth-error/page.tsx   — friendly sign-in failure surface
+proxy.ts                — Next 16's renamed middleware: refreshes the Supabase session cookie
+components/
+  ui.tsx                — shared vocabulary: StatusChip, VerifyBadge, RouteBadge, Button
+  landing/              — the landing page (see "Landing flow" below)
+    Landing.tsx         — composes the whole page (Nav, Hero, Proof, Pipeline, Economics, CTA, Footer)
+    GraphField.tsx      — 2D canvas hero graph (the always-safe fallback)
+    GraphField3D.tsx    — 3D R3F hero graph (z-layered nodes, edges, parallax)
+    GraphFieldAuto.tsx  — picks 3D vs 2D per device; lazy-loads Three.js (ssr:false)
+    VerifiedAnswer.tsx  — the live "answer types in, citation resolves to verified" terminal
+    MagneticButton.tsx  — cursor-leaning CTA (motion values, not state)
+  auth/AuthMenu.tsx     — nav sign-in button → account chip + sign-out
+lib/api.ts              — typed client mirroring the backend response models
+lib/supabase/           — Supabase clients + the useUser hook (see "Auth flow")
 ```
 
 The Chat UI calls `lib/api.ts` → the FastAPI backend. Verified citations render as
 amber chips; unverified ones render struck-through in red (the honesty rule).
 
 **Not built yet:** Mission Control (`/r/[repo]/run`), Atlas (`/r/[repo]/atlas`),
-the code panel, the landing page, the app shell/drawer. See `FRONTEND.md` for specs
-and `STATUS.md` for status.
+the code panel, the app shell/drawer, "my repos"/history. See `FRONTEND.md` for
+specs and `STATUS.md` for status.
+
+---
+
+## Flow 3: Landing page (`/`)
+
+```
+app/page.tsx                       → <Landing />
+components/landing/Landing.tsx      — "use client"; composes the sections:
+  Nav        — wordmark + Source link + <AuthMenu/>
+  Hero       — asymmetric split: copy + repo input (left), graph (right)
+    └─ GraphFieldAuto → GraphField3D (desktop+WebGL) | GraphField (else)
+    └─ MagneticButton — the "Map it" CTA; on submit calls api.indexRepo → /r/{id}/chat
+  Proof      — claim (left) + <VerifiedAnswer/> live terminal (right)
+  Pipeline   — connected Parse → Enrich → Answer flow (Phosphor icons)
+  Economics  — mono numerals on hairlines (no card boxes)
+  CallToAction — single intent, magnetic button → the demo repo's chat
+  Footer
+```
+
+**Key files & what to know:**
+- `GraphFieldAuto.tsx` — the safety gate. Renders the 2D `GraphField` by default
+  (also the SSR output, so no hydration mismatch), then upgrades to `GraphField3D`
+  **only** on desktop with usable WebGL and motion allowed. `GraphField3D` is
+  `next/dynamic({ ssr: false })`, so the ~150KB Three.js bundle never touches SSR
+  or the LCP path; `/` still prerenders as static.
+- `GraphField3D.tsx` — React Three Fiber. Instanced node meshes, edge `lineSegments`,
+  spring-damped pointer parallax (eased toward `useThree().pointer`, never 1:1),
+  amber important-node glints. A `FrameGate` pauses the render loop via
+  `IntersectionObserver` when scrolled out of view; DPR capped. **This is the engine
+  the future Mission Control live graph reuses** — same renderer, camera, primitives.
+- `VerifiedAnswer.tsx` — motivated motion: on `whileInView`, the answer types in and
+  a citation resolves `checking` → `verified`, dramatizing the product's core claim.
+  Reduced-motion shows the settled end-state immediately.
+- The graph is **illustrative**, not live telemetry (honors PRODUCT.md's
+  never-simulate rule — same status as the old 2D field).
+
+---
+
+## Flow 4: Google sign-in (`/auth/*`, Supabase Auth)
+
+Optional sign-in. Anonymous use is the default; sign-in only unlocks "my repos" +
+history once the backend `owner_user_id` work lands (not built yet).
+
+```
+components/auth/AuthMenu.tsx        — nav: "Sign in" (signed out) | account chip (signed in)
+  └─ signInWithOAuth({provider:'google', redirectTo:/auth/callback?next=…})
+       → Google consent → back to:
+app/auth/callback/route.ts          — exchangeCodeForSession(code) → redirect to `next`
+proxy.ts → lib/supabase/middleware.ts (updateSession)
+                                    — runs every request, refreshes the auth cookie
+app/auth/signout/route.ts           — POST-only signOut() → home
+```
+
+**Key files & what to know:**
+- `lib/supabase/client.ts` / `server.ts` — `@supabase/ssr` browser + server clients
+  (cookie-based sessions). Use the anon (public) key, never a service key.
+- `lib/supabase/middleware.ts` — `updateSession`; no-ops gracefully if the Supabase
+  env vars are absent, so the app runs before keys are configured.
+- `lib/supabase/use-user.ts` — reactive `{ user, loading }` for client components
+  (subscribes to `onAuthStateChange`).
+- `proxy.ts` — **Next 16 renamed `middleware.ts` → `proxy.ts`** (exports a `proxy`
+  function). It wires `updateSession` and excludes static assets via `matcher`.
+- **Backend half not built:** no JWT validation, no `owner_user_id` column. Sign-in
+  works on the frontend but does not yet persist per-user ownership. See `PLAN.md §9B`.
 
 ---
 

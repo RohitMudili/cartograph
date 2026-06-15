@@ -29,14 +29,18 @@ only), auth/multi-user, collaborative cursors, VS Code webview.
 ## 2. Information Architecture & Routes
 
 ```
-/                      Landing (brand register; no app shell)
-/new                   Index-a-repo flow (URL input → budget notice → run)
-/r/[repo]              Redirects to /run while indexing, else /atlas
-/r/[repo]/run          Mission Control — live during runs, Replay mode after
-/r/[repo]/atlas        Architecture graph + inspector + walkthrough overlay
-/r/[repo]/chat         Research console (threads, citations, code panel)
-/r/[repo]/walkthrough  Generated onboarding doc (prose view; links into Atlas)
-/r/[repo]/settings     Re-index, budgets, danger zone
+/                      Landing (brand register; no app shell)            ✅ BUILT
+                         the repo-paste/index flow lives in the hero
+                         (the planned standalone /new page was folded in)
+/auth/callback         Google OAuth PKCE exchange                        ✅ BUILT
+/auth/signout          POST-only sign-out                               ✅ BUILT
+/auth/auth-error       Sign-in failure surface                          ✅ BUILT
+/r/[repo]              Redirects to /run while indexing, else /atlas     ❌ (chat is the only /r route today)
+/r/[repo]/run          Mission Control — live during runs, Replay after  ❌
+/r/[repo]/atlas        Architecture graph + inspector + walkthrough       ❌
+/r/[repo]/chat         Research console (threads, citations, code panel) ✅ BUILT
+/r/[repo]/walkthrough  Generated onboarding doc                          ❌
+/r/[repo]/settings     Re-index, budgets, danger zone                    ❌
 ```
 
 - **URL is state** in Atlas and Chat: focused node, zoom level, active filters,
@@ -85,29 +89,56 @@ envelope is a discriminated union mirrored from `agents/schemas.py`.
 
 ## 5. View Specs
 
-### 5.1 Landing page `/` (brand register)
+### 5.1 Landing page `/` (brand register) — ✅ BUILT
 
-One scroll, five beats, typography-led. No section eyebrows, no numbered-section
-scaffolding, no card grids, no gradient text — the page's decoration budget is
-spent on one thing: a **live-data hero**.
+> **Status:** built and shipped (`components/landing/`). The spec below is the
+> original plan; the **"As built"** note records what actually shipped, which
+> diverged where the live-replay/eval-data dependencies don't exist yet.
+
+One scroll, typography-led. No section eyebrows, no numbered-section scaffolding,
+no card grids, no gradient text, zero em-dashes — the decoration budget is spent on
+the hero graph and one live moment.
+
+Original five-beat plan:
 
 1. **Hero:** display headline ("Watch agents map your codebase."), one
-   sub-sentence, single amber CTA ("Index a repo") + ghost CTA ("Watch the
-   2-minute demo"). Behind/below: a **real replay** of a recorded fastapi index
-   run rendered by the actual Mission Control components (muted, auto-playing,
-   reduced-motion-aware poster fallback). Not a video file — the real UI on
-   fixture data. This is the "show, don't tell" thesis in one screen.
-2. **The economics:** the cost chart from real eval data — "first question
-   $0.47 / repeat questions $0.008" — drawn in the house style (amber on black,
-   mono numerals), with a one-paragraph explanation of the graph-amortization
-   idea.
-3. **The verification loop:** a horizontal strip showing one claim's lifecycle:
-   explorer finding → critic check → verified annotation → cited answer. Real
-   screenshots/fragments, captioned in prose.
-4. **The atlas:** one full-bleed Atlas screenshot with three callout captions.
-5. **Footer:** GitHub link (star count, live), eval scoreboard table (generated
-   from `evals/results`), "built with FastAPI · LangGraph · Gemini · Postgres",
-   author credit.
+   sub-sentence, single amber CTA. Behind/below: a **real replay** of a recorded
+   fastapi index run rendered by the actual Mission Control components.
+2. **The economics:** the cost chart from real eval data, house style.
+3. **The verification loop:** a strip showing one claim's lifecycle.
+4. **The atlas:** one full-bleed Atlas screenshot with callout captions.
+5. **Footer:** GitHub link, eval scoreboard, tech credit, author.
+
+**As built** (`Landing.tsx`, composed of `Nav / Hero / Proof / Pipeline /
+Economics / CallToAction / Footer`):
+
+1. **Hero** — asymmetric split: headline + sub-sentence + the **repo-paste input**
+   (the index flow lives here, replacing a separate `/new` page) + a magnetic
+   "Map it" CTA on the left; a **living knowledge graph** bleeding off the right
+   edge. The graph is the restrained **3D R3F** `GraphField3D` on desktop+WebGL,
+   the 2D canvas `GraphField` everywhere else (`GraphFieldAuto` gates it; Three.js
+   is lazy-loaded `ssr:false`). It is *illustrative*, not a live replay — the real
+   replay-on-Mission-Control idea waits on the event stream + fleet.
+2. **Proof** — replaces the eval cost chart (no eval data yet). A claim on the left
+   and `VerifiedAnswer` on the right: a live terminal where the answer types in and
+   a citation resolves `checking → verified`. This carries beat 3's "verification
+   loop" thesis as motivated motion.
+3. **Pipeline** — a connected Parse → Enrich → Answer flow (Phosphor icons on a
+   drawn connector), not three equal cards.
+4. **Economics** — the cost story as large amber mono numerals on hairlines (placeholder
+   figures `< $1 / ~$0.01 / $0`, to be replaced by real eval data when it exists).
+5. **CTA + Footer** — single CTA intent ("Open the live demo" → the demo repo's
+   chat); footer with the tech-stack strip. Eval scoreboard + live star count are
+   deferred (no eval data; no live GitHub fetch yet).
+
+**Deferred to when their data exists:** real index-run replay in the hero, the
+eval cost chart, the Atlas screenshot beat, the eval scoreboard table. The hero
+graph engine (`GraphField3D`) is deliberately the **seed of the Mission Control
+live graph** — same R3F renderer, camera, instanced node/edge primitives.
+
+**Nav also hosts Google sign-in** (`AuthMenu`): optional, unlocks "my repos" +
+history once the backend `owner_user_id` work lands. See `ARCHITECTURE.md` Flow 4
+and `PLAN.md §9B`.
 
 ### 5.2 Mission Control `/r/[repo]/run`
 
@@ -214,18 +245,27 @@ limited.
 ## 6. Component Architecture
 
 ```
-components/
-├── ui/            # restyled shadcn primitives (Button, Input, Tabs, Dialog, ...)
-├── telemetry/     # AgentCard, AgentBadge, StatusChip, CostTag, FeedRow,
-│   EventFeed (virtualized), RunFooter, TimelineScrubber, TerritoryMap
-├── atlas/         # GraphCanvas (Sigma wrapper), Inspector, NodeChip,
-│   EdgeList, WalkthroughOverlay, GraphSearch, MiniMap
-├── chat/          # Thread, AnswerBlock, CitationChip, TransparencyStrip,
-│   CodePanel, RouteBadge, EscalationCard
-├── shell/         # TopBar, IconRail, TelemetryDrawer, CommandPalette,
-│   CommitBadge, RepoSwitcher
-└── landing/       # Hero, ReplayEmbed, CostChart, VerificationStrip, EvalTable
+components/                                                         (planned vs built)
+├── ui.tsx         # ✅ shared vocabulary (StatusChip, VerifyBadge, RouteBadge, Button)
+│                  #    (kept as one file for now, not a ui/ dir of shadcn primitives)
+├── landing/       # ✅ BUILT — Landing (composes the page), GraphField (2D),
+│   GraphField3D (R3F), GraphFieldAuto (gate+lazy), VerifiedAnswer (live cite
+│   terminal), MagneticButton. NOTE: the originally-planned ReplayEmbed/CostChart/
+│   VerificationStrip/EvalTable were replaced by the graph hero + VerifiedAnswer
+│   (their data — real replays, eval results — does not exist yet).
+├── auth/          # ✅ AuthMenu (nav sign-in → account chip + sign-out)
+├── telemetry/     # ❌ AgentCard, AgentBadge, CostTag, FeedRow, EventFeed,
+│   RunFooter, TimelineScrubber, TerritoryMap
+├── atlas/         # ❌ GraphCanvas, Inspector, NodeChip, EdgeList,
+│   WalkthroughOverlay, GraphSearch, MiniMap
+├── chat/          # ⚠️ Chat is built but as one ChatConsole.tsx (under app/r/[repo]/chat/),
+│   not yet split into Thread/AnswerBlock/CitationChip/TransparencyStrip/CodePanel/…
+└── shell/         # ❌ TopBar, IconRail, TelemetryDrawer, CommandPalette, RepoSwitcher
 ```
+
+> The Atlas graph will use Sigma.js (WebGL, 2D semantic zoom) per §5.3. The
+> **landing's R3F engine** (`GraphField3D`) is separately the seed for the Mission
+> Control *live* graph — different tool, same "graph in motion" job.
 
 Rules: telemetry components are **pure functions of the event store** (renders
 identically live or replayed, testable on fixtures). `StatusChip`, `AgentBadge`,

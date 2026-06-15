@@ -29,9 +29,10 @@ orchestration, GraphRAG, eval-driven quality). The differentiators are: visible
 agent exploration, **adversarially-verified citations**, and an honest cost story.
 
 **Current state:** the backend "ask a question, get a verified cited answer" core
-works end-to-end and is proven on live data; a Chat UI exists. The multi-agent
-fleet and the big graph/Mission-Control UI views are not built yet. **`STATUS.md`
-has the exact itemized breakdown — read it.**
+works end-to-end and is proven on live data; a Chat UI exists; and there's now a
+real **landing page** (with a 3D hero graph) plus **Google sign-in** (Supabase,
+frontend only). The multi-agent fleet and the big graph/Mission-Control UI views
+are not built yet. **`STATUS.md` has the exact itemized breakdown — read it.**
 
 ---
 
@@ -81,10 +82,18 @@ cartograph/
 │   └── tests/          unit/ (no DB) + integration/ (db/network markers)
 │
 └── frontend/          ← Next.js 16, React 19, Tailwind v4, TypeScript
-    ├── app/            layout.tsx, globals.css (design tokens), page.tsx (home),
-    │                   r/[repo]/chat/{page.tsx,ChatConsole.tsx}
-    ├── components/ui.tsx     shared vocabulary (StatusChip, badges, Button)
-    └── lib/api.ts           typed backend client
+    ├── app/            layout.tsx, globals.css (design tokens), page.tsx (→ <Landing/>),
+    │                   r/[repo]/chat/{page.tsx,ChatConsole.tsx},
+    │                   auth/{callback,signout,auth-error}   ← Google sign-in routes
+    ├── proxy.ts        ★ Next 16's renamed middleware — refreshes Supabase session
+    ├── components/
+    │   ├── ui.tsx           shared vocabulary (StatusChip, badges, Button)
+    │   ├── landing/         Landing.tsx + GraphField(2D)/GraphField3D(R3F)/GraphFieldAuto,
+    │   │                    VerifiedAnswer (live cite terminal), MagneticButton
+    │   └── auth/AuthMenu.tsx   nav sign-in → account chip
+    └── lib/
+        ├── api.ts           typed backend client
+        └── supabase/        client/server/middleware + useUser hook
 ```
 
 ---
@@ -136,15 +145,30 @@ These are the things that have actually bitten us. Internalize them.
     `--color-primary`). Use the token utility classes (`bg-bg`, `text-primary`, etc.),
     don't hardcode colors. The design language is "instrument panel at night" (dark,
     amber telemetry) — see `DESIGN.md`.
-13. **Frontend gate:** `cd frontend && npx tsc --noEmit && npm run lint && npm run build`.
+13. **Next 16 renamed `middleware.ts` → `proxy.ts`** (exports a `proxy` function, not
+    `middleware`). Ours wires the Supabase session refresh. Don't recreate a
+    `middleware.ts` — it won't run.
+14. **The 3D hero is lazy + guarded.** `GraphField3D` (React Three Fiber) loads via
+    `next/dynamic({ ssr: false })` so Three.js stays off SSR/LCP; `GraphFieldAuto`
+    falls back to the 2D `GraphField` on mobile / coarse-pointer / reduced-motion /
+    no-WebGL. Keep that gate — never import `GraphField3D` directly into a server
+    component or unconditionally.
+15. **Reveal animations must degrade visible.** The hero intro animates transform +
+    blur only (opacity stays 1) so content is legible without JS / mid-animation /
+    on a frozen frame. Don't gate content visibility behind a JS-driven `opacity:0`
+    entry (it shipped a blank hero once before this rule existed).
+16. **Frontend gate:** `cd frontend && npx tsc --noEmit && npx eslint <changed> && npx next build`
+    (verify visually too — headless screenshot the actual render; it has caught real
+    bugs that code review missed).
 
 ### General
-14. **`.env` files are gitignored and contain real secrets** — never commit them.
-    Templates are `.env.example` (backend) and `.env.local.example` (frontend).
-15. **Verify external API shapes against official docs before coding** (LangChain,
-    Gemini, Next.js, SQLAlchemy 2.0). Versions here are current and differ from
-    older training data. This habit has prevented many bugs in this repo.
-16. **Don't put build-phase labels ("Phase 2/3") in code comments** — describe the
+17. **`.env` files are gitignored and contain real secrets** — never commit them.
+    Templates are `.env.example` (backend) and `.env.local.example` (frontend). The
+    `.gitignore` tracks `.env*.example` (placeholders only) but ignores real env files.
+18. **Verify external API shapes against official docs before coding** (LangChain,
+    Gemini, Next.js, SQLAlchemy 2.0, Supabase, R3F). Versions here are current and
+    differ from older training data. This habit has prevented many bugs in this repo.
+19. **Don't put build-phase labels ("Phase 2/3") in code comments** — describe the
     subsystem instead. Phase language belongs in the planning docs only.
 
 ---
@@ -221,15 +245,20 @@ the verifier checks a claimed `file:line` snippet against the real chunk text.
 ## 9. What to build next (pointers)
 
 `STATUS.md` has the itemized list. The big remaining pieces, in rough order:
-1. **Answer quality** — index markdown/README (the model never sees the README today);
+1. **Google sign-in, backend half** — validate the Supabase JWT and add a nullable
+   `owner_user_id` on `repos`/`questions`, then per-user RLS. The frontend sign-in
+   is already wired; this is what makes it *do* something ("my repos" + history).
+   (`PLAN.md §9B`.)
+2. **Answer quality** — index markdown/README (the model never sees the README today);
    question-type-aware prompting. Small, high-leverage. (`PLAN.md §2.3`.)
-2. **Multi-agent LangGraph fleet** — the whole `PLAN.md §2.2` topology (planner →
+3. **Multi-agent LangGraph fleet** — the whole `PLAN.md §2.2` topology (planner →
    explorers → synthesizer → critic → librarian). 0% built; `langgraph` installed,
    `llm.py` ready. The biggest chunk.
-3. **Backend production shape** — query router (local/global/escalate), Leiden
+4. **Backend production shape** — query router (local/global/escalate), Leiden
    communities, WebSocket event stream, background worker, TypeScript extractor.
-4. **Frontend** — Mission Control + Atlas (the big visual views), code panel, landing.
-5. **Eval harness, GitHub OAuth, deploy + demo + writeup.**
+5. **Frontend** — Mission Control + Atlas (the big visual views), code panel. The
+   landing page is built; reuse its R3F graph engine for the Mission Control graph.
+6. **Eval harness, GitHub OAuth (private repos), deploy + demo + writeup.**
 
 > **The agent fleet → WebSocket event stream → Mission Control UI are ONE connected
 > feature** — none demos without the other two. The frontend is designed

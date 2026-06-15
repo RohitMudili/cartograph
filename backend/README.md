@@ -19,12 +19,16 @@ app/
 ├── main.py        FastAPI app, lifespan, router wiring
 ├── config.py      settings + provider-agnostic model registry (single source of truth)
 ├── logging.py     structlog configuration
-├── api/           HTTP routers (health, repos; more to come)
-├── db/            engine/session, declarative base, health probe, migrations
-├── indexer/       clone → parse → static graph + semantic layer
-├── agents/        LLM wrapper + LangGraph agent fleet
-└── query/         retrieval, routing, answering, citation verification
+├── api/           HTTP routers: health, repos (index + questions)
+├── db/            engine/session, declarative base, health probe, migrations (head 0005)
+├── indexer/       clone → parse (tree-sitter, Python) → static graph + semantic layer
+├── agents/        llm.py — the provider-agnostic LLM wrapper. LangGraph fleet NOT built yet.
+└── query/         retrieval (BM25 + dense + graph), answering, citation verification
 ```
+
+> Status: the index → cited-answer → verify core works end to end. The query
+> router (local/global/escalate) and the multi-agent fleet are planned, not built.
+> See [`../STATUS.md`](../STATUS.md) for the itemized breakdown.
 
 ## Commands
 

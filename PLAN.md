@@ -716,6 +716,14 @@ private — connect GitHub to index it" 403, not a cryptic clone failure.
 
 ## 9B. User Authentication & Identity (Google via Supabase)
 
+> **Status (2026-06-16): frontend BUILT, backend NOT.** The Google sign-in flow is
+> wired in the frontend (`@supabase/ssr`: browser/server clients, `proxy.ts` session
+> refresh, `/auth/callback` PKCE exchange, `AuthMenu`, `useUser`). Operator setup
+> (Google OAuth client + Supabase provider) is done. **Still to build:** backend
+> JWT validation, the nullable `owner_user_id` column on `repos`/`questions`, the
+> per-user RLS policies, and the "my repos"/history UI those unlock. Until then,
+> sign-in succeeds but persists no per-user ownership. See `ARCHITECTURE.md` Flow 4.
+
 User identity is separate from repo access (§9A). Identity answers "who is this
 person" so users have accounts, saved/recently-indexed repos, and question
 history. **Mechanism: Google sign-in via Supabase Auth.** Supabase already hosts
@@ -813,13 +821,15 @@ Each week ends in something demoable. Cut scope, never quality of what ships.
 - ❌ TypeScript grammar support.
 - ❌ **Milestone:** full index run with event log; global question from community summaries.
 
-### Week 3 — The face (UI) — ⚠️ PARTIAL (Chat done; the big views not)
+### Week 3 — The face (UI) — ⚠️ PARTIAL (Chat + Landing done; the big views not)
 - ⚠️ Next.js app: ✅ **Chat** (working — threaded Q&A, verified citation chips,
-  transparency strip; ❌ code panel on chip click). ❌ **Mission Control** (live WS).
-  ❌ **Atlas** (semantic-zoom graph).
+  transparency strip; ❌ code panel on chip click). ✅ **Landing page** (brand
+  surface, with a 3D R3F hero graph + a live verified-citation terminal).
+  ✅ **Google sign-in** (Supabase, frontend wired; backend `owner_user_id` TODO).
+  ❌ **Mission Control** (live WS). ❌ **Atlas** (semantic-zoom graph).
 - ❌ Onboarding walkthrough generation + overlay.
-- ✅ Design tokens (DESIGN.md, dark instrument-panel) wired; ❌ full design/polish pass;
-  ❌ the screen-recordable demo.
+- ✅ Design tokens (DESIGN.md, dark instrument-panel) wired; ⚠️ design/polish pass
+  done on the landing + chat, not the (unbuilt) big views; ❌ the screen-recordable demo.
 - ❌ **Milestone:** the 2-minute demo recording.
 
 ### Week 4 — The proof (evals, hardening, launch) — ❌ NOT STARTED
@@ -833,7 +843,8 @@ Each week ends in something demoable. Cut scope, never quality of what ships.
 ### Net remaining, by area (see STATUS.md for the itemized checklist)
 - **Backend:** router/global/escalate routes, communities, markdown+TS extractors,
   worker+queue, WebSocket event stream, graph/walkthrough APIs, OAuth, incremental re-index.
-- **Frontend:** Mission Control, Atlas, code panel, landing, app shell + drawer, event store.
+- **Frontend:** Mission Control, Atlas, code panel, app shell + drawer, event store,
+  "my repos"/history. (✅ landing page, ✅ 3D hero, ✅ Google sign-in frontend, ✅ Chat.)
 - **Agent fleet:** the entire §2.2 topology (0% — foundation only).
 - **Cross-cutting:** eval harness, deploy/demo/writeup.
 

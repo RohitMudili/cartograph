@@ -3,27 +3,47 @@
 _Working log for picking up where we left off. Not the plan (see PLAN.md) — this
 is "where are we right now and what's next."_
 
-**Last updated:** 2026-06-15 (end of session — dev servers stopped, clean checkpoint)
+**Last updated:** 2026-06-16 (landing redesign + Google sign-in + 3D hero shipped
+to `main`; dev servers currently RUNNING)
 
 ---
 
-## 🎉 Working product — backend spine + a usable UI
+## 🎉 Working product — backend spine, a usable Chat UI, and a real landing page
 
-You can now do the whole loop **in a browser**: paste a repo → it's indexed → ask
-a question → get an answer grounded in real code with VERIFIED `file:line`
-citations, in the dark "instrument panel" UI. Proven live against Supabase. The
-core product value is working and clickable.
+You can do the whole loop **in a browser**: land on a designed marketing page →
+paste a repo → it's indexed → ask a question → get an answer grounded in real code
+with VERIFIED `file:line` citations, in the dark "instrument panel" UI. Proven live
+against Supabase. The core product value is working and clickable, and the front
+door now sells it.
 
 ### Done & verified
 
-**Frontend (this session):**
+**Frontend:**
 
 - **Next.js 16 + React 19 + Tailwind v4** app in `frontend/`. DESIGN.md tokens
   wired (OKLCH instrument-panel palette, IBM Plex). Verified against the bundled
-  Next 16 docs (params-as-Promise etc.).
-- **Home (`/`)** — paste a GitHub URL → index → route to chat. Honest errors
-  (private 403, backend unreachable). Re-indexing an already-indexed repo is
-  idempotent (returns instantly → straight to chat).
+  Next 16 docs (params-as-Promise, `proxy.ts` not `middleware.ts`, etc.).
+- **Landing page (`/`)** — a real brand surface, built with the taste/impeccable/
+  emil-design-eng skills. Asymmetric split hero with a **living graph** behind it,
+  a **live verified-citation terminal** that types an answer and resolves a
+  citation from `checking` → `verified`, a connected Parse → Enrich → Answer
+  pipeline, an economics strip (mono numerals on hairlines), and a magnetic CTA.
+  No section-eyebrow grammar, no card grids, zero em-dashes. Verified at 390px and
+  1440px via headless capture.
+- **3D hero graph** — the hero graph is a restrained **React Three Fiber** scene
+  (z-layered nodes, edges, amber important-nodes that glint, spring-damped pointer
+  parallax). Lazy-loaded (`ssr:false`) so Three.js never touches SSR/LCP; falls
+  back to the 2D canvas `GraphField` on mobile / coarse-pointer / reduced-motion /
+  no-WebGL. This is the engine the future Mission Control traversal reuses.
+- **The repo-paste flow lives in the hero** — paste a GitHub URL → index → route to
+  chat. Honest errors (private 403, backend unreachable). Re-indexing an
+  already-indexed repo is idempotent (returns instantly → straight to chat).
+- **Google sign-in (Supabase Auth)** — optional sign-in via `@supabase/ssr`
+  (browser + server clients, `proxy.ts` session refresh, `/auth/callback` PKCE
+  exchange, POST `/auth/signout`, `AuthMenu` in the nav, `useUser` hook).
+  Anonymous use stays the default; sign-in is wired on the frontend and only
+  unlocks "my repos" + history once the backend side lands. **Frontend done;
+  backend JWT validation + `owner_user_id` not built yet.**
 - **Chat console (`/r/[repo]/chat`)** — research-console UI: threaded Q&A, inline
   citation chips (verified=amber / unverified=rejected+strikethrough),
   transparency strip (route · N/M verified · nodes consulted), repo-status
@@ -53,7 +73,7 @@ core product value is working and clickable.
 - **Infra** — Supabase (async + pgbouncer fix), migrations at head **0005**,
   deny-all RLS on all tables (backend = `postgres`/BYPASSRLS, unaffected).
 
-### Proven on real data (2026-06-15)
+### Proven on real data
 
 Indexed benhoyt/pybktree live (Gemini + Supabase, no 429s). Then asked it real
 questions through the full retrieve→synthesize→verify chain:
@@ -76,7 +96,6 @@ cd frontend && npm run dev    # → http://localhost:3000
 
 pybktree is already indexed in Supabase, so pasting
 `https://github.com/benhoyt/pybktree` jumps straight to chat for an instant demo.
-_(Dev servers are currently STOPPED.)_
 
 ---
 
@@ -93,8 +112,8 @@ Until then, develop/test on small repos — fully unblocked.
 ## What's left — detailed, by area
 
 Honest accounting (✅ done · ⚠️ partial · ❌ not built). The "answer one question"
-core is solid; the "full query intelligence + streaming + agent fleet + the big
-UI views" is the bulk of remaining work.
+core is solid and there's now a real front door; the "full query intelligence +
+streaming + agent fleet + the big graph UI views" is the bulk of remaining work.
 
 ### Backend  (answer-one-question core ~95% · full scope ~50%)
 
@@ -111,26 +130,43 @@ Indexing layer:
 - ❌ **Incremental re-indexing** (diff-based; today re-index = full re-run / skip-if-indexed)
 - ⚠️ **Metrics** — LOC/fan-in/out done; git churn + graph centrality not computed
 
+Auth / identity:
+- ⚠️ **Google sign-in** — frontend wired (Supabase, optional); backend **JWT
+  validation + nullable `owner_user_id` on `repos`/`questions` not built**, so
+  sign-in does not yet persist per-user ownership. Per-user RLS policies (layering
+  `owner_user_id = auth.uid()` over the deny-all baseline) not added. (task #21
+  frontend done; backend half is the next obvious step.)
+- ❌ **GitHub OAuth for private repos** (task #15 — designed §9A, not built)
+
 Production shape:
 - ❌ **Background worker + job queue** (indexing runs inline in the request today)
 - ❌ **WebSocket event stream** (`/ws/runs/{id}`) — backbone for fleet + Mission Control
 - ❌ **`agent_events` table + event bus** (persisted replay/stream log)
 - ❌ **Graph-slice API** (`GET /repos/{id}/graph`) — what Atlas queries
 - ❌ **Walkthrough generation** (`GET /repos/{id}/walkthrough`)
-- ❌ **GitHub OAuth** (task #15 — designed §9A, not built)
 - ⚠️ **Budget caps** — LLM rate limiter done; per-run hard $ cap w/ graceful abort not wired
 
-### Frontend  (~38%)
+### Frontend  (~50%)
 
-- ✅ App scaffold + design tokens · ✅ Home (paste-a-repo) · ✅ Chat console (working)
+- ✅ App scaffold + design tokens
+- ✅ **Landing page** (`/`) — full brand surface: hero, live verified-citation
+  terminal, pipeline, economics, magnetic CTA. **Built and shipped.**
+- ✅ **3D hero graph** (R3F) with 2D fallback + lazy-load. Reuses toward Mission Control.
+- ✅ **Google sign-in (frontend)** — optional Supabase auth in the nav.
+- ✅ **Index-a-repo flow** (now in the hero) · ✅ **Chat console** (working)
 - ❌ **Mission Control** (`/r/[repo]/run`) — live agent roster, territory map, findings
   feed, cost ticker, replay scrubber. The visual centerpiece. Needs the event stream.
+  (The R3F graph engine from the hero is the seed for its live graph.)
 - ❌ **Atlas** (`/r/[repo]/atlas`) — force-directed / semantic-zoom graph + inspector
 - ❌ **Code panel** — clicking a Chat citation chip should open source at the lines
-- ❌ **Walkthrough view** · ❌ **Landing page** (brand surface; `/` is the app home today)
-- ❌ **App shell** — icon rail + telemetry drawer (only a minimal Chat top bar exists)
+- ❌ **Walkthrough view**
+- ❌ **App shell** — icon rail + telemetry drawer (only a minimal Chat top bar + the
+  landing nav exist)
+- ❌ **"My repos" / history** — the surface Google sign-in is meant to unlock (waits
+  on the backend `owner_user_id` work)
 - ❌ **Shared infra** — WebSocket event store (Zustand), replay-from-fixtures harness, Storybook
-- ❌ **Hardening** — skeletons, error boundaries, responsive/mobile, full a11y pass
+- ❌ **Hardening** — skeletons, error boundaries, full responsive/mobile pass beyond
+  the landing, full a11y pass
 
 ### Agent fleet  (0% — all spec, no code)
 
@@ -152,20 +188,28 @@ provider-agnostic `llm.py` ready), but none of the fleet itself:
   (credibility moat; also grades task #20)
 - ❌ **Deploy + demo video + writeup**
 
-**Overall v1 ≈ 45-50%.** Core value (cited Q&A) is demoable in the browser today;
-the agent fleet is the single biggest remaining chunk.
+**Overall v1 ≈ 50%.** Core value (cited Q&A) is demoable in the browser today and
+the landing page sells it; the agent fleet + the live graph UI views are the single
+biggest remaining chunk.
 
 ---
 
 ## Housekeeping / notes
 
-- **🔑 ROTATE EXPOSED KEYS:** the Google + LangSmith keys and Supabase password
-  appeared in the build chat. Gitignored (never committed) but rotate them.
+- **🔑 ROTATE EXPOSED KEYS:** the Google + LangSmith keys, Supabase password, and
+  the Supabase anon key appeared in the build chat. Gitignored (never committed)
+  but rotate them. The anon key is a public client key by design, but rotating the
+  whole set is cleanest.
 - **Test data in Supabase:** indexing test runs left rows in there
   (benhoyt/pybktree + any `test/...` repos). Harmless; clean out before indexing
   repos you care about (cascade-deletes from the `repos` row).
-- `.env` is configured + working (Supabase + Gemini + LangSmith). Local dev DB =
-  Supabase (needs internet); CI = throwaway Postgres (isolated).
+- `.env` is configured + working (Supabase + Gemini + LangSmith). `frontend/.env.local`
+  holds the real Supabase URL + anon key. Local dev DB = Supabase (needs internet);
+  CI = throwaway Postgres (isolated).
+- **`.gitignore` tracks `.env*.example` templates** but ignores real env files.
 - `LLM_RPM` is the throughput knob — 10 for free tier, 1000+ for paid.
-- **Run the FULL gate before pushing:** `ruff check` + `ruff format --check` +
+- **Backend gate before pushing:** `ruff check` + `ruff format --check` +
   `pyright` + `pytest -m "not network"` (the format check has bitten us twice).
+- **Frontend gate before pushing:** `npx tsc --noEmit` + `npx eslint <changed>` +
+  `npx next build`.
+- **Merge straight to `main`** (owner's preference — no PRs).
