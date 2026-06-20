@@ -46,12 +46,37 @@ _QUESTION_POLICY = """
         USING (owner_user_id IS NULL OR owner_user_id = auth.uid())
 """
 
+# Supabase provides the auth schema with auth.uid() out of the box, but plain
+# Postgres (e.g. CI's pgvector/pgvector:pg16 image) does not. We create the
+# schema and a stub function so the RLS policies below don't fail with
+# "schema auth does not exist". In Supabase these are no-ops.
+_AUTH_BOOTSTRAP = """
+    CREATE SCHEMA IF NOT EXISTS auth;
+    DO $$
+    BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_proc p
+            JOIN pg_namespace n ON p.pronamespace = n.oid
+            WHERE n.nspname = 'auth' AND p.proname = 'uid'
+        ) THEN
+            CREATE FUNCTION auth.uid() RETURNS uuid
+                LANGUAGE SQL STABLE
+            AS $$ SELECT NULL::uuid; $$;
+        END IF;
+    END;
+    $$
+"""
+
 # Named policies for clean downgrade.
 _REPO_POLICY_NAME = "user_repo_isolation"
 _QUESTION_POLICY_NAME = "user_question_isolation"
 
 
 def upgrade() -> None:
+    # Bootstrap the auth schema/uid() for environments (like CI) that don't have
+    # Supabase's auth schema. Safe no-op in Supabase.
+    op.execute(_AUTH_BOOTSTRAP)
+
     # Enable RLS on the questions table (defense-in-depth baseline).
     for table in _RLS_TABLES:
         op.execute(f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY")
