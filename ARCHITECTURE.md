@@ -98,14 +98,19 @@ To swap providers or models: change the strings in `.env` (`REASONING_MODEL`,
 
 ## The database (`db/`)
 
-- `models.py` — the ORM. `Repo → Node → Edge → Chunk → IndexRun`. SQLAlchemy 2.0
-  typed (`Mapped[...]`). `communities`/`agent_events`/`questions` tables exist but
-  are unused until later phases.
+- `models.py` — the ORM. `Repo → Node → Edge → Chunk → IndexRun → Question`.
+  SQLAlchemy 2.0 typed (`Mapped[...]`). `Question` table is now **active** — used by
+  `POST /api/repos/{id}/questions` to persist Q&A history. `owner_user_id` on repos
+  and questions drives per-user ownership + RLS. `communities`/`agent_events` still
+  defined but unused until the agent fleet lands.
 - `session.py` — async engine/session. **Contains the Supabase pgbouncer fix**
   (`statement_cache_size=0`). `db_session` test fixture rolls back.
 - `enums.py` — native Postgres enums (stored as UPPERCASE member names).
-- `migrations/` — alembic, sequential `0001`..`0005`, head = `0005`. pgvector enabled
-  in 0001; graph schema in 0002; RLS deny-all in 0004; chunk tsvector in 0005.
+- `migrations/` — alembic, sequential `0001`..`0006`, head = `0006`. pgvector enabled
+  in 0001; graph schema in 0002; RLS deny-all in 0004; chunk tsvector in 0005;
+  **0006**: adds `owner_user_id` on repos, `questions` table, and per-user RLS policies.
+  The `migrations/env.py` now includes the pgbouncer `statement_cache_size=0` fix
+  (applies when connecting through the Supabase pooler).
 
 ---
 
@@ -222,8 +227,15 @@ app/auth/signout/route.ts           — POST-only signOut() → home
   (subscribes to `onAuthStateChange`).
 - `proxy.ts` — **Next 16 renamed `middleware.ts` → `proxy.ts`** (exports a `proxy`
   function). It wires `updateSession` and excludes static assets via `matcher`.
-- **Backend half not built:** no JWT validation, no `owner_user_id` column. Sign-in
-  works on the frontend but does not yet persist per-user ownership. See `PLAN.md §9B`.
+- **Backend half built:** `backend/app/auth/jwt.py` validates Supabase JWTs using
+  **PyJWT** with JWKS (fetches public keys from `https://<ref>.supabase.co/auth/v1/.well-known/jwks.json`)
+  and falls back to HMAC (HS256) if `SUPABASE_JWT_SECRET` is configured. Returns
+  `AuthUser(id, email)` or `None` — never rejects, anonymous-friendly.
+- `owner_user_id` column on `Repos` and `Questions` — populated by `POST /api/repos`
+  and `POST /api/repos/{id}/questions` when a valid JWT is present.
+- RLS policies (migration 0006) layer per-user `SELECT` over the deny-all baseline.
+- The frontend (`lib/api.ts`) automatically sends the Supabase access token as
+  `Authorization: Bearer <token>` on every API request.
 
 ---
 

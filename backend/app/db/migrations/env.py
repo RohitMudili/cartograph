@@ -43,10 +43,16 @@ def _run_migrations(connection: Connection) -> None:
 
 
 async def run_migrations_online() -> None:
+    settings = get_settings()
+    connect_args: dict = {}
+    if "pooler.supabase.com" in settings.database_url:
+        connect_args["statement_cache_size"] = 0
+
     connectable = async_engine_from_config(
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
         poolclass=NullPool,
+        connect_args=connect_args,
     )
     async with connectable.connect() as connection:
         await connection.run_sync(_run_migrations)

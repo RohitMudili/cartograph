@@ -11,6 +11,7 @@ the worker/queue split is a documented future change (PLAN.md §4.1).
 
 from __future__ import annotations
 
+import datetime as dt
 import uuid
 from typing import Annotated
 
@@ -18,7 +19,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import Repo
+from app.auth.jwt import AuthUser, get_optional_user
+from app.db.models import Question, Repo
 from app.db.session import get_session
 from app.indexer.cloner import CloneError, PrivateRepoError
 from app.indexer.pipeline import index_repo
@@ -56,9 +58,15 @@ class RepoResponse(BaseModel):
 async def create_index(
     body: IndexRequest,
     session: Annotated[AsyncSession, Depends(get_session)],
+    user: Annotated[AuthUser | None, Depends(get_optional_user)] = None,
 ) -> IndexResponse:
     try:
         result = await index_repo(session, body.url, branch=body.branch)
+        # Attribute the repo to the authenticated user if available.
+        if user is not None:
+            repo = await session.get(Repo, uuid.UUID(result.repo_id))
+            if repo is not None:
+                repo.owner_user_id = uuid.UUID(user.id)
         await session.commit()
     except PrivateRepoError as exc:
         # Private/not-found anonymously → 403 with the connect-GitHub guidance
@@ -124,12 +132,39 @@ async def ask_question(
     repo_id: uuid.UUID,
     body: QuestionRequest,
     session: Annotated[AsyncSession, Depends(get_session)],
+    user: Annotated[AuthUser | None, Depends(get_optional_user)] = None,
 ) -> AnswerResponse:
     repo = await session.get(Repo, repo_id)
     if repo is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
 
+    t0 = dt.datetime.now(dt.UTC)
     ans = await Answerer(session, repo_id).answer(body.question)
+    latency_ms = int((dt.datetime.now(dt.UTC) - t0).total_seconds() * 1000)
+
+    # Persist the question to the database so it appears in history.
+    question = Question(
+        repo_id=repo_id,
+        owner_user_id=uuid.UUID(user.id) if user else None,
+        text=ans.question,
+        route=ans.route,
+        answer={"text": ans.text, "answerable": ans.answerable},
+        citations=[
+            {
+                "path": vc.citation.path,
+                "start_line": vc.citation.start_line,
+                "end_line": vc.citation.end_line,
+                "verified": vc.verified,
+            }
+            for vc in ans.citations
+        ],
+        citation_verified=ans.fully_verified,
+        cost_usd=0.0,  # Filled from LangSmith post-hoc when tracing is on
+        latency_ms=latency_ms,
+    )
+    session.add(question)
+    await session.commit()
+
     return AnswerResponse(
         question=ans.question,
         answer=ans.text,

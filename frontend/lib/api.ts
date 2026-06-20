@@ -3,7 +3,13 @@
  *
  * Mirrors the FastAPI response models (app/api/repos.py). Kept hand-written and
  * small; if the surface grows, generate from the OpenAPI schema instead.
+ *
+ * When a user is signed in via Supabase Auth, the Supabase access token is sent
+ * as an Authorization: Bearer header so the backend can validate it and
+ * attribute repos/questions to the user (owner_user_id).
  */
+
+import { createClient } from "./supabase/client";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -70,10 +76,27 @@ export class ApiError extends Error {
   }
 }
 
+/** Get the Supabase access token for the currently signed-in user, if any. */
+async function getAccessToken(): Promise<string | null> {
+  try {
+    const supabase = createClient();
+    const { data } = await supabase.auth.getSession();
+    return data.session?.access_token ?? null;
+  } catch {
+    return null;
+  }
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const token = await getAccessToken();
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+
   const res = await fetch(`${API_URL}${path}`, {
     ...init,
-    headers: { "Content-Type": "application/json", ...init?.headers },
+    headers: { ...headers, ...init?.headers },
   });
   if (!res.ok) {
     let detail = res.statusText;

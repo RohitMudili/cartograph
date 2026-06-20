@@ -716,13 +716,15 @@ private — connect GitHub to index it" 403, not a cryptic clone failure.
 
 ## 9B. User Authentication & Identity (Google via Supabase)
 
-> **Status (2026-06-16): frontend BUILT, backend NOT.** The Google sign-in flow is
-> wired in the frontend (`@supabase/ssr`: browser/server clients, `proxy.ts` session
-> refresh, `/auth/callback` PKCE exchange, `AuthMenu`, `useUser`). Operator setup
-> (Google OAuth client + Supabase provider) is done. **Still to build:** backend
-> JWT validation, the nullable `owner_user_id` column on `repos`/`questions`, the
-> per-user RLS policies, and the "my repos"/history UI those unlock. Until then,
-> sign-in succeeds but persists no per-user ownership. See `ARCHITECTURE.md` Flow 4.
+> **Status (2026-06-20): ✅ COMPLETE.** The Google sign-in flow is fully wired:
+> frontend (`@supabase/ssr`: browser/server clients, `proxy.ts` session refresh,
+> `/auth/callback` PKCE exchange, `AuthMenu`, `useUser`) and backend (JWKS-based
+> JWT validation via PyJWT at `backend/app/auth/jwt.py`, `owner_user_id` on
+> repos/questions, RLS policies in migration 0006).
+> 
+> **Note on JWT library choice:** PyJWT was chosen over `python-jose` because
+> `jose.jwk.construct()` doesn't support EC keys (needed for Supabase's ES256
+> tokens). `PyJWK()` handles EC JWK keys correctly. See `backend/app/auth/jwt.py`.
 
 User identity is separate from repo access (§9A). Identity answers "who is this
 person" so users have accounts, saved/recently-indexed repos, and question
@@ -768,11 +770,10 @@ Landing / app → "Continue with Google" (supabase-js) → Google consent →
   except for owner-scoped actions (connect GitHub, list my repos).
 - The §9A encrypted GitHub token is stored against the `owner_user_id`.
 
-### Build placement
+### Build placement — ✅ COMPLETE
 
-A **dedicated phase after the landing page**, before (or alongside) the §9A
-GitHub-access phase — identity is the foundation GitHub-linking attaches to. Does
-not block the public-repo demo, which stays anonymous-friendly.
+Landed in a dedicated phase after the landing page. Does not block the public-repo
+demo, which stays anonymous-friendly.
 
 ---
 

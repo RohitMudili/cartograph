@@ -22,6 +22,7 @@ import uuid
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     CheckConstraint,
     Computed,
     DateTime,
@@ -47,6 +48,7 @@ class Repo(Base, TimestampMixin):
     __tablename__ = "repos"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    owner_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     url: Mapped[str] = mapped_column(String(2048), nullable=False)
     default_branch: Mapped[str | None] = mapped_column(String(255))
     head_commit: Mapped[str | None] = mapped_column(String(40))
@@ -60,6 +62,9 @@ class Repo(Base, TimestampMixin):
 
     nodes: Mapped[list[Node]] = relationship(back_populates="repo", cascade="all, delete-orphan")
     runs: Mapped[list[IndexRun]] = relationship(back_populates="repo", cascade="all, delete-orphan")
+    questions: Mapped[list[Question]] = relationship(
+        back_populates="repo", cascade="all, delete-orphan"
+    )
 
     __table_args__ = (
         # One row per (url, commit): re-indexing the same commit is idempotent.
@@ -203,3 +208,27 @@ class IndexRun(Base):
     repo: Mapped[Repo] = relationship(back_populates="runs")
 
     __table_args__ = (Index("ix_index_runs_repo", "repo_id"),)
+
+
+class Question(Base, TimestampMixin):
+    """A user question asked about a repo (PLAN.md §3)."""
+
+    __tablename__ = "questions"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    repo_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("repos.id", ondelete="CASCADE"), nullable=False
+    )
+    owner_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    # The classification route the router picked (local, global, escalate).
+    route: Mapped[str] = mapped_column(String(255), nullable=False)
+    answer: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    citations: Mapped[list[dict]] = mapped_column(JSONB, default=list, nullable=False)
+    citation_verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    cost_usd: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    latency_ms: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+    repo: Mapped[Repo] = relationship(back_populates="questions")
+
+    __table_args__ = (Index("ix_questions_repo", "repo_id"),)

@@ -3,8 +3,8 @@
 _Working log for picking up where we left off. Not the plan (see PLAN.md) — this
 is "where are we right now and what's next."_
 
-**Last updated:** 2026-06-16 (landing redesign + Google sign-in + 3D hero shipped
-to `main`; dev servers currently RUNNING)
+**Last updated:** 2026-06-20 (backend Google sign-in + JWKS auth + question persistence
++ RLS shipped; dev servers RUNNING at `localhost:8000` / `localhost:3000`)
 
 ---
 
@@ -41,9 +41,15 @@ door now sells it.
 - **Google sign-in (Supabase Auth)** — optional sign-in via `@supabase/ssr`
   (browser + server clients, `proxy.ts` session refresh, `/auth/callback` PKCE
   exchange, POST `/auth/signout`, `AuthMenu` in the nav, `useUser` hook).
-  Anonymous use stays the default; sign-in is wired on the frontend and only
-  unlocks "my repos" + history once the backend side lands. **Frontend done;
-  backend JWT validation + `owner_user_id` not built yet.**
+  Anonymous use stays the default; sign-in unlocks "my repos" + history.
+  - **Frontend:** ✅ `AuthMenu`, sign-in/signout routes, session refresh all wired.
+  - **Backend:** ✅ JWKS-based JWT validation (`backend/app/auth/jwt.py` via
+    PyJWT — fetches public keys from Supabase's `/auth/v1/.well-known/jwks.json`,
+    validates ES256 signatures). `owner_user_id` populated on repos + questions.
+  - **RLS:** ✅ Per-user `SELECT` policies (0006) layer over the deny-all baseline
+    — rows visible if `owner_user_id IS NULL OR owner_user_id = auth.uid()`.
+  - **Operator setup:** `SUPABASE_JWT_SECRET` in `.env` (used as HMAC fallback;
+    JWKS requires no additional config — project ref extracted from the JWT `iss`).
 - **Chat console (`/r/[repo]/chat`)** — research-console UI: threaded Q&A, inline
   citation chips (verified=amber / unverified=rejected+strikethrough),
   transparency strip (route · N/M verified · nodes consulted), repo-status
@@ -70,8 +76,11 @@ door now sells it.
   shown as verified. `POST /api/repos/{id}/questions`.
 - **Rate limiter** — token-bucket paces calls to `LLM_RPM` (default 10) so we
   don't trip Gemini free-tier 429s.
-- **Infra** — Supabase (async + pgbouncer fix), migrations at head **0005**,
-  deny-all RLS on all tables (backend = `postgres`/BYPASSRLS, unaffected).
+- **Infra** — Supabase (async + pgbouncer fix), migrations at head **0006**
+  (0005 plus `owner_user_id` on repos + questions table + RLS policies),
+  deny-all RLS + per-user RLS on repos/questions.
+- **JWT library:** `PyJWT` (replaced `python-jose` which doesn't support EC keys
+  needed for Supabase ES256 tokens). Use `PyJWK` for JWKS key construction.
 
 ### Proven on real data
 
@@ -131,11 +140,10 @@ Indexing layer:
 - ⚠️ **Metrics** — LOC/fan-in/out done; git churn + graph centrality not computed
 
 Auth / identity:
-- ⚠️ **Google sign-in** — frontend wired (Supabase, optional); backend **JWT
-  validation + nullable `owner_user_id` on `repos`/`questions` not built**, so
-  sign-in does not yet persist per-user ownership. Per-user RLS policies (layering
-  `owner_user_id = auth.uid()` over the deny-all baseline) not added. (task #21
-  frontend done; backend half is the next obvious step.)
+- ✅ **Google sign-in** — complete end-to-end. Frontend wired (Supabase Auth);
+  backend validates Supabase JWT via JWKS (PyJWT, ES256/RS256). `owner_user_id`
+  populated on repos + questions. RLS policies (0006) layer per-user SELECT over
+  the deny-all baseline. Next: "my repos" history UI.
 - ❌ **GitHub OAuth for private repos** (task #15 — designed §9A, not built)
 
 Production shape:
@@ -188,9 +196,18 @@ provider-agnostic `llm.py` ready), but none of the fleet itself:
   (credibility moat; also grades task #20)
 - ❌ **Deploy + demo video + writeup**
 
-**Overall v1 ≈ 50%.** Core value (cited Q&A) is demoable in the browser today and
-the landing page sells it; the agent fleet + the live graph UI views are the single
-biggest remaining chunk.
+**Overall v1 ≈ 55%.** Core value (cited Q&A) + auth identity layer is now complete;
+the agent fleet + the live graph UI views are the single biggest remaining chunk.
+
+### Dependency gotchas (new, this session)
+- **`python-jose` doesn't support EC JWK keys** — `jose.jwk.construct()` fails
+  with `Unable to find an algorithm for key` for Supabase's ES256 keys. Use
+  `PyJWT` + `PyJWK` instead (already done). Don't re-introduce `python-jose`.
+- **Supabase JWKS URL** is `/auth/v1/.well-known/jwks.json`, NOT `/auth/v1/jwks`
+  (which returns 401). The project ref is extracted from the JWT `iss` claim
+  (`https://<ref>.supabase.co/auth/v1`) — no separate config needed.
+- **`jwt.decode()` returns the payload, never the header** — use
+  `jwt.get_unverified_header(token)` for header extraction. This was a real bug.
 
 ---
 

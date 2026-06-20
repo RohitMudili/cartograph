@@ -128,8 +128,9 @@ These are the things that have actually bitten us. Internalize them.
 7. **Native Postgres enums** (`repo_status` etc.) store the Python enum **member
    NAMES (UPPERCASE)**, not `.value`. Adding an enum value needs an `ALTER TYPE ...
    ADD VALUE` migration (see `0003`). Reference the UPPERCASE label.
-8. **Migrations are sequential** (`0001`..`0005`). After autogenerate, rename to the
-   next number AND set `revision`/`down_revision` to match. Migration head is **0005**.
+8. **Migrations are sequential** (`0001`..`0006`). After autogenerate, rename to the
+   next number AND set `revision`/`down_revision` to match. Migration head is **0006**
+   (adds `owner_user_id` on repos, `questions` table, and per-user RLS policies).
 9. **The cloner deliberately blocks `file://` and disables git hooks** — security.
    Don't "fix" it to clone local paths; tests work around it via the local-dir path.
 10. **`GIT_TERMINAL_PROMPT=0`** in the cloner is load-bearing — without it, a private
@@ -176,6 +177,14 @@ These are the things that have actually bitten us. Internalize them.
     differ from older training data. This habit has prevented many bugs in this repo.
 19. **Don't put build-phase labels ("Phase 2/3") in code comments** — describe the
     subsystem instead. Phase language belongs in the planning docs only.
+20. **`python-jose` doesn't support EC JWK keys** (Supabase's ES256 tokens).
+    `jose.jwk.construct()` fails with `Unable to find an algorithm for key`.
+    Use `PyJWT` + `PyJWK` instead — this is already done in `auth/jwt.py`.
+    Do not re-introduce `python-jose`.
+21. **Supabase JWKS URL** is `/auth/v1/.well-known/jwks.json`, NOT `/auth/v1/jwks`
+    (401). The project ref is extracted from the JWT `iss` claim — no env var needed.
+22. **In PyJWT, `jwt.decode()` returns the payload, never the header.**
+    Use `jwt.get_unverified_header(token)` for header extraction.
 
 ---
 
@@ -251,10 +260,10 @@ the verifier checks a claimed `file:line` snippet against the real chunk text.
 ## 9. What to build next (pointers)
 
 `STATUS.md` has the itemized list. The big remaining pieces, in rough order:
-1. **Google sign-in, backend half** — validate the Supabase JWT and add a nullable
-   `owner_user_id` on `repos`/`questions`, then per-user RLS. The frontend sign-in
-   is already wired; this is what makes it *do* something ("my repos" + history).
-   (`PLAN.md §9B`.)
+1. ✅ **Google sign-in, backend half** — **COMPLETE.** Supabase JWT validation via
+   PyJWT/JWKS, `owner_user_id` on repos/questions, per-user RLS (migration 0006).
+   Frontend sign-in already wired; sign-in now persists per-user ownership.
+   (`PLAN.md §9B`, `backend/app/auth/jwt.py`.)
 2. **Answer quality** — index markdown/README (the model never sees the README today);
    question-type-aware prompting. Small, high-leverage. (`PLAN.md §2.3`.)
 3. **Multi-agent LangGraph fleet** — the whole `PLAN.md §2.2` topology (planner →
@@ -264,6 +273,7 @@ the verifier checks a claimed `file:line` snippet against the real chunk text.
    communities, WebSocket event stream, background worker, TypeScript extractor.
 5. **Frontend** — Mission Control + Atlas (the big visual views), code panel. The
    landing page is built; reuse its R3F graph engine for the Mission Control graph.
+   "My repos" / history UI now unblocked (owner_user_id populated).
 6. **Eval harness, GitHub OAuth (private repos), deploy + demo + writeup.**
 
 > **The agent fleet → WebSocket event stream → Mission Control UI are ONE connected

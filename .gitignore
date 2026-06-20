@@ -25,6 +25,9 @@ build/
 .idea/
 .DS_Store
 Thumbs.db
+nul
+backend/nul
+
 
 # Node / frontend (added in the frontend phase)
 node_modules/

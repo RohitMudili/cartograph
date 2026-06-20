@@ -107,6 +107,12 @@ class Settings(BaseSettings):
         # Every provider the models reference must have a key.
         return all(key_for.get(p) for p in providers if p in key_for)
 
+    # ── Auth ──
+    # Supabase JWT secret for validating access tokens on the backend.
+    # Found under Supabase Dashboard → Settings → API → JWT Secret.
+    # Required for the backend to authenticate signed-in users.
+    supabase_jwt_secret: str = Field(default="")
+
     # ── LangSmith (tracing + cost computation; opt-in, off by default) ──
     # When tracing is on, LangChain auto-traces every model call to LangSmith,
     # which computes cost. We read run.total_cost back into our DB. With it off,
