@@ -50,9 +50,17 @@ _QUESTION_POLICY = """
 # Postgres (e.g. CI's pgvector/pgvector:pg16 image) does not. We create the
 # schema and a stub function so the RLS policies below don't fail with
 # "schema auth does not exist". In Supabase these are no-ops.
-_AUTH_BOOTSTRAP = """
-    CREATE SCHEMA IF NOT EXISTS auth;
-    DO $$
+#
+# Notes:
+# - These are split into separate op.execute() calls because asyncpg cannot
+#   prepare multiple SQL statements in a single execution.
+# - The DO block uses $do$ (not $$) to avoid dollar-quoting collision with
+#   the inner function body which uses $$.
+
+_AUTH_SCHEMA = "CREATE SCHEMA IF NOT EXISTS auth"
+
+_AUTH_UID_FN = """
+    DO $do$
     BEGIN
         IF NOT EXISTS (
             SELECT 1 FROM pg_proc p
@@ -64,7 +72,7 @@ _AUTH_BOOTSTRAP = """
             AS $$ SELECT NULL::uuid; $$;
         END IF;
     END;
-    $$
+    $do$
 """
 
 # Named policies for clean downgrade.
@@ -75,7 +83,8 @@ _QUESTION_POLICY_NAME = "user_question_isolation"
 def upgrade() -> None:
     # Bootstrap the auth schema/uid() for environments (like CI) that don't have
     # Supabase's auth schema. Safe no-op in Supabase.
-    op.execute(_AUTH_BOOTSTRAP)
+    op.execute(_AUTH_SCHEMA)
+    op.execute(_AUTH_UID_FN)
 
     # Enable RLS on the questions table (defense-in-depth baseline).
     for table in _RLS_TABLES:
