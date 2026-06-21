@@ -10,6 +10,7 @@
  * reduced-motion path. No animation on the high-frequency open if the user
  * prefers reduced motion.
  */
+import Link from "next/link";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 
@@ -112,6 +113,14 @@ function AccountChip({ email }: { email: string }) {
                 {email}
               </p>
             </div>
+            <Link
+              href="/repos"
+              role="menuitem"
+              onClick={() => setOpen(false)}
+              className="block w-full px-3 py-2.5 text-left text-sm text-ink transition-colors hover:bg-surface-2"
+            >
+              My repos
+            </Link>
             <form action="/auth/signout" method="post">
               <button
                 type="submit"

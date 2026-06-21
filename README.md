@@ -18,11 +18,13 @@ question after the first one.
 > and what's left. Then [`STATUS.md`](STATUS.md) for the live "where we are" log.
 
 > **Status:** the backend "ask a question → get a verified cited answer" core works
-> end-to-end (proven on live data); there's a working Chat UI, a designed **landing
-> page** (with a restrained 3D hero graph), and **Google sign-in** (Supabase,
-> frontend wired). The multi-agent fleet and the graph/Mission-Control views are not
-> built yet — see [`STATUS.md`](STATUS.md) for the itemized breakdown. Architecture:
-> [`PLAN.md`](PLAN.md); UI plan: [`FRONTEND.md`](FRONTEND.md); code-navigation map:
+> end-to-end (proven on live data). Features shipped: **Chat UI** with session
+> sidebar, **landing page** (3D hero graph), **Google sign-in** (end-to-end,
+> backend JWT validation + RLS), **"My repos" page**, **Redis session store**
+> (Upstash, 1-hour TTL), and **UserProfile table**. The multi-agent fleet and the
+> graph/Mission-Control views are not built yet — see [`STATUS.md`](STATUS.md)
+> for the itemized breakdown. Architecture: [`PLAN.md`](PLAN.md); UI plan:
+> [`FRONTEND.md`](FRONTEND.md); code-navigation map:
 > [`ARCHITECTURE.md`](ARCHITECTURE.md); design/product: [`DESIGN.md`](DESIGN.md) /
 > [`PRODUCT.md`](PRODUCT.md).
 

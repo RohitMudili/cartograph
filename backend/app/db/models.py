@@ -44,6 +44,26 @@ from app.db.base import Base, TimestampMixin
 from app.db.enums import EdgeKind, NodeKind, RepoStatus, RunKind, RunStatus
 
 
+class UserProfile(Base, TimestampMixin):
+    """Maps a Supabase user to optional email and GitHub username.
+
+    `owner_user_id` is the Supabase user UUID (``sub`` claim in the JWT).
+    `email` is populated from the Google OAuth profile.
+    `github_username` is set when the user authenticates GitHub for private
+    repo access (PLAN.md §9A — not yet built). Both are optional because a
+    user may only sign in with Google (no GitHub) or only later add GitHub.
+    """
+
+    __tablename__ = "user_profiles"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    owner_user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), unique=True, nullable=False, index=True
+    )
+    email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    github_username: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+
 class Repo(Base, TimestampMixin):
     __tablename__ = "repos"
 
@@ -224,6 +244,12 @@ class Question(Base, TimestampMixin):
     # The classification route the router picked (local, global, escalate).
     route: Mapped[str] = mapped_column(String(255), nullable=False)
     answer: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    # Groups questions into chat sessions (1hr TTL in Redis).
+    # Auto-created by the backend if not provided by the client.
+    session_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    # Unique per-turn identifier for this Q&A exchange. Always set by the API.
+    # Nullable at the DB level for backward compatibility with existing rows.
+    conversation_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     citations: Mapped[list[dict]] = mapped_column(JSONB, default=list, nullable=False)
     citation_verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     cost_usd: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
@@ -231,4 +257,8 @@ class Question(Base, TimestampMixin):
 
     repo: Mapped[Repo] = relationship(back_populates="questions")
 
-    __table_args__ = (Index("ix_questions_repo", "repo_id"),)
+    __table_args__ = (
+        Index("ix_questions_repo", "repo_id"),
+        Index("ix_questions_session", "session_id"),
+        Index("ix_questions_conversation", "conversation_id"),
+    )

@@ -320,8 +320,12 @@ agent_events (id, run_id, ts, agent, type,  -- spawn|tool_call|finding|verdict|e
               payload jsonb)                -- the replay/debug/UI stream record
 
 questions    (id, repo_id, text, route, answer jsonb,
+              session_id, conversation_id,        -- UUID strings; both ALWAYS set
               citations jsonb, citation_verified boolean,
               cost_usd, latency_ms, created_at)
+
+user_profiles (id, owner_user_id unique,        -- maps Supabase user to identity
+               email, github_username nullable)
 ```
 
 ---
@@ -414,15 +418,24 @@ All model access goes through one module. Rules:
 
 ```
 POST   /api/repos                      {url}            → {repo_id, run_id}   (idempotent per URL+commit)
+GET    /api/repos                                       → list user's repos (authenticated)
 GET    /api/repos/{id}                                  → status, stats, cost
 POST   /api/repos/{id}/reindex                          → incremental update run
 GET    /api/repos/{id}/graph?level=&community=&node=    → UI graph slices (paginated)
 GET    /api/repos/{id}/walkthrough                      → generated onboarding doc
 POST   /api/repos/{id}/questions       {text}           → streamed answer (SSE) + citations + route + cost
-GET    /api/repos/{id}/questions                        → history
+GET    /api/repos/{id}/questions                        → history (optional ?session_id= filter)
+POST   /api/repos/{id}/sessions       (no body)         → create chat session, returns session_id
+GET    /api/repos/{id}/sessions                         → list sessions for a repo (from Postgres)
 WS     /ws/runs/{run_id}                                → agent event stream (mission control)
 GET    /api/evals/latest                                → published eval scores (powers README badge)
 ```
+
+**Session system:** Every question is accompanied by both a `session_id` (groups
+Q&A into 1-hour chat sessions stored in Upstash Redis) and a `conversation_id`
+(unique per-turn UUID). The backend auto-creates sessions when missing. Last 5
+Q&A pairs are maintained in Redis for conversation continuity and injected into
+the LLM prompt on subsequent questions.
 
 WebSocket event envelope (one schema, every agent event):
 
@@ -716,7 +729,7 @@ private — connect GitHub to index it" 403, not a cryptic clone failure.
 
 ## 9B. User Authentication & Identity (Google via Supabase)
 
-> **Status (2026-06-20): ✅ COMPLETE.** The Google sign-in flow is fully wired:
+> **Status (2026-06-21): ✅ COMPLETE (+ "My repos" UI + UserProfile table).** The Google sign-in flow is fully wired:
 > frontend (`@supabase/ssr`: browser/server clients, `proxy.ts` session refresh,
 > `/auth/callback` PKCE exchange, `AuthMenu`, `useUser`) and backend (JWKS-based
 > JWT validation via PyJWT at `backend/app/auth/jwt.py`, `owner_user_id` on

@@ -3,8 +3,9 @@
 _Working log for picking up where we left off. Not the plan (see PLAN.md) — this
 is "where are we right now and what's next."_
 
-**Last updated:** 2026-06-20 (backend Google sign-in + JWKS auth + question persistence
-+ RLS shipped; dev servers RUNNING at `localhost:8000` / `localhost:3000`)
+**Last updated:** 2026-06-21 (Redis session store + mandatory session_id/conversation_id
++ "My repos" page + UserProfile table shipped; dev servers RUNNING at `localhost:8000` /
+`localhost:3000`)
 
 ---
 
@@ -50,12 +51,29 @@ door now sells it.
     — rows visible if `owner_user_id IS NULL OR owner_user_id = auth.uid()`.
   - **Operator setup:** `SUPABASE_JWT_SECRET` in `.env` (used as HMAC fallback;
     JWKS requires no additional config — project ref extracted from the JWT `iss`).
+  - **UserProfile table** (migration 0007) — maps `owner_user_id` to optional
+    `email` and `github_username`.
 - **Chat console (`/r/[repo]/chat`)** — research-console UI: threaded Q&A, inline
   citation chips (verified=amber / unverified=rejected+strikethrough),
   transparency strip (route · N/M verified · nodes consulted), repo-status
   polling, live elapsed-time pending indicator (free-tier ~15s is paced, shown
-  honestly). **Demoed live: a real onboarding question returned 4/4 verified
-  citations across multiple files.**
+  honestly). **Demoed live: a real onboarding question returned 3/3 verified
+  citations.**
+  - **Session sidebar** — left-side session list (w-64): "New chat" button, session
+    list with first-question preview / message count / relative time, active session
+    highlighting, click to switch sessions and load past questions, mobile hamburger
+    toggle + backdrop overlay.
+  - **Mandatory session_id + conversation_id** — every question is accompanied by
+    both a `session_id` (groups questions into 1-hour chat sessions) and a
+    `conversation_id` (unique per-turn UUID). Backend auto-creates sessions when
+    missing; frontend captures them from the response.
+  - **Redis session context** — last 5 Q&A pairs stored in Upstash Redis with 1-hour
+    TTL. Injected as conversation history into the LLM prompt on subsequent questions.
+- **"My repos" page (`/repos`)** — signed-in users see their indexed repos sorted
+  by status (indexed first), each showing name, status chip, last question text,
+  stats (nodes/edges/chunks/files), and indexed date. Three states: signed-out
+  prompt, empty state, repo list. Visible "My repos" link in landing nav and chat
+  header when signed in.
 
 **Backend:**
 
@@ -76,11 +94,19 @@ door now sells it.
   shown as verified. `POST /api/repos/{id}/questions`.
 - **Rate limiter** — token-bucket paces calls to `LLM_RPM` (default 10) so we
   don't trip Gemini free-tier 429s.
-- **Infra** — Supabase (async + pgbouncer fix), migrations at head **0006**
-  (0005 plus `owner_user_id` on repos + questions table + RLS policies),
-  deny-all RLS + per-user RLS on repos/questions.
+- **Infra** — Supabase (async + pgbouncer fix), migrations at head **0009**
+  (0006 plus `session_id` on questions in 0008, `conversation_id` on questions in 0009,
+  `user_profiles` table in 0007), deny-all RLS + per-user RLS on repos/questions.
 - **JWT library:** `PyJWT` (replaced `python-jose` which doesn't support EC keys
   needed for Supabase ES256 tokens). Use `PyJWK` for JWKS key construction.
+- **Upstash Redis session store** — `app/session/store.py`: 1-hour TTL per session,
+  last 5 Q&A pairs stored as conversation context. Every question gets both a
+  `session_id` (groups into chat sessions) and a `conversation_id` (per-turn UUID),
+  auto-created by the backend if not provided by the client.
+- **Session endpoints** — `POST /api/repos/{id}/sessions` (create), `GET /api/repos/{id}/sessions` (list),
+  `GET /api/repos/{id}/questions?session_id=` (filter by session).
+- **UserProfile table** (migration 0007) — maps `owner_user_id` to optional `email`
+  and `github_username` for future GitHub OAuth integration.
 
 ### Proven on real data
 
@@ -124,7 +150,7 @@ Honest accounting (✅ done · ⚠️ partial · ❌ not built). The "answer one
 core is solid and there's now a real front door; the "full query intelligence +
 streaming + agent fleet + the big graph UI views" is the bulk of remaining work.
 
-### Backend  (answer-one-question core ~95% · full scope ~50%)
+### Backend  (answer-one-question core ~95% · full scope ~55%)
 
 Query / answer layer:
 - ❌ **Router** (local / global / escalate) — every question forces `local` today
@@ -143,7 +169,13 @@ Auth / identity:
 - ✅ **Google sign-in** — complete end-to-end. Frontend wired (Supabase Auth);
   backend validates Supabase JWT via JWKS (PyJWT, ES256/RS256). `owner_user_id`
   populated on repos + questions. RLS policies (0006) layer per-user SELECT over
-  the deny-all baseline. Next: "my repos" history UI.
+  the deny-all baseline.
+- ✅ **"My repos" / history UI** — `GET /api/repos` endpoint returns repos for the
+  authenticated user. `frontend/app/repos/page.tsx` with signed-out/empty/list states.
+  "My repos" link visible in landing nav and chat header. `owner_user_id`
+  populated on all new repos and questions.
+- ✅ **UserProfile table** — maps `owner_user_id` to optional `email` and
+  `github_username` for future GitHub OAuth linking.
 - ❌ **GitHub OAuth for private repos** (task #15 — designed §9A, not built)
 
 Production shape:
@@ -170,8 +202,13 @@ Production shape:
 - ❌ **Walkthrough view**
 - ❌ **App shell** — icon rail + telemetry drawer (only a minimal Chat top bar + the
   landing nav exist)
-- ❌ **"My repos" / history** — the surface Google sign-in is meant to unlock (waits
-  on the backend `owner_user_id` work)
+- ✅ **"My repos" / history** — `GET /api/repos` + `frontend/app/repos/page.tsx`
+  with signed-out/empty/list states. "My repos" link in landing nav and chat header.
+- ✅ **Chat session sidebar** — left-side session list (w-64) with New Chat button,
+  session previews, active session highlighting, past session loading. Every question
+  has mandatory `session_id` + `conversation_id`.
+- ✅ **Redis session store** — Upstash Redis with 1-hour TTL, last 5 Q&A pairs
+  for conversation continuity.
 - ❌ **Shared infra** — WebSocket event store (Zustand), replay-from-fixtures harness, Storybook
 - ❌ **Hardening** — skeletons, error boundaries, full responsive/mobile pass beyond
   the landing, full a11y pass

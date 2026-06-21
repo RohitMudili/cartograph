@@ -30,6 +30,7 @@ from app.db.enums import RepoStatus, RunStatus
 from app.db.models import IndexRun, Repo
 from app.indexer.cloner import CloneError, cleanup_workspace, clone_repo
 from app.indexer.graph_builder import BuildStats, GraphBuilder
+from app.indexer.parser.markdown import extract_markdown
 from app.indexer.parser.python import extract_python
 from app.indexer.parser.types import FileExtract
 from app.indexer.summarizer import Summarizer
@@ -54,6 +55,7 @@ SKIP_DIRS = {
 # Extension → extractor. Adding a language is a new entry here plus its extractor.
 EXTRACTORS = {
     ".py": extract_python,
+    ".md": extract_markdown,
 }
 
 

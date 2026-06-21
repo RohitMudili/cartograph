@@ -13,9 +13,12 @@ import { motion, useReducedMotion } from "motion/react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
+import Link from "next/link";
+
 import { AuthMenu } from "@/components/auth/AuthMenu";
 import { Spinner } from "@/components/ui";
 import { ApiError, api } from "@/lib/api";
+import { useUser } from "@/lib/supabase/use-user";
 
 import { GraphFieldAuto } from "./GraphFieldAuto";
 import { MagneticButton } from "./MagneticButton";
@@ -96,6 +99,7 @@ function HeroReveal({
 }
 
 function Nav() {
+  const { user } = useUser();
   return (
     <nav className="absolute inset-x-0 top-0 z-30 flex h-16 items-center justify-between px-6 md:px-10">
       <span className="flex items-center gap-2.5">
@@ -112,6 +116,14 @@ function Nav() {
           <GitBranch size={15} />
           Source
         </a>
+        {user && (
+          <Link
+            href="/repos"
+            className="flex items-center gap-1.5 text-sm text-muted transition-colors hover:text-ink"
+          >
+            My repos
+          </Link>
+        )}
         <AuthMenu />
       </div>
     </nav>

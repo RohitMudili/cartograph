@@ -38,7 +38,8 @@ only), auth/multi-user, collaborative cursors, VS Code webview.
 /r/[repo]              Redirects to /run while indexing, else /atlas     ❌ (chat is the only /r route today)
 /r/[repo]/run          Mission Control — live during runs, Replay after  ❌
 /r/[repo]/atlas        Architecture graph + inspector + walkthrough       ❌
-/r/[repo]/chat         Research console (threads, citations, code panel) ✅ BUILT
+/repos                "My repos" page (signed-out/empty/list states)      ✅ BUILT
+/r/[repo]/chat         Research console (threads, citations, session sidebar) ✅ BUILT
 /r/[repo]/walkthrough  Generated onboarding doc                          ❌
 /r/[repo]/settings     Re-index, budgets, danger zone                    ❌
 ```
@@ -144,9 +145,10 @@ eval cost chart, the Atlas screenshot beat, the eval scoreboard table. The hero
 graph engine (`GraphField3D`) is deliberately the **seed of the Mission Control
 live graph** — same R3F renderer, camera, instanced node/edge primitives.
 
-**Nav also hosts Google sign-in** (`AuthMenu`): optional, unlocks "my repos" +
-history once the backend `owner_user_id` work lands. See `ARCHITECTURE.md` Flow 4
-and `PLAN.md §9B`.
+**Nav also hosts Google sign-in** (`AuthMenu`) and a visible **"My repos" link** when
+the user is signed in. The `Landing.tsx` Nav component shows `useUser()` state and
+conditionally renders the link next to "Source". See `ARCHITECTURE.md` Flow 4 and
+`PLAN.md §9B`.
 
 ### 5.2 Mission Control `/r/[repo]/run`
 

@@ -34,7 +34,9 @@ log = structlog.get_logger(__name__)
 _SYSTEM = (
     "You are a precise code-understanding assistant answering questions about a "
     "specific repository. Answer ONLY from the provided context — never invent "
-    "files, symbols, or behavior not shown. If the context doesn't contain the "
+    "files, symbols, or behavior not shown. If a previous conversation is shown, "
+    "use it for continuity but still answer from the provided code context. "
+    " If the context doesn't contain the "
     "answer, say so plainly. Every concrete claim about the code MUST cite the "
     "exact file and line range it comes from, using the citations field. Quote a "
     "short verbatim snippet from the cited lines so it can be verified. Keep the "
@@ -91,7 +93,13 @@ class Answerer:
         self.retriever = Retriever(session, repo_id)
         self.verifier = CitationVerifier(session, repo_id)
 
-    async def answer(self, question: str, *, ledger: UsageLedger | None = None) -> Answer:
+    async def answer(
+        self,
+        question: str,
+        *,
+        session_context: str | None = None,
+        ledger: UsageLedger | None = None,
+    ) -> Answer:
         items = await self.retriever.retrieve(question, top_k=10, ledger=ledger)
         if not items:
             return Answer(
@@ -106,14 +114,22 @@ class Answerer:
         context = _format_context(items)
         used_nodes = [it.node_id for it in items if it.node_id is not None]
 
-        out = await self._synthesize(question, context, ledger=ledger)
+        out = await self._synthesize(
+            question, context, ledger=ledger, conversation_history=session_context
+        )
         verified = await self.verifier.verify_all(_to_citations(out.citations))
 
         # If any citation failed, regenerate once, naming the violations.
         if out.citations and not all(v.verified for v in verified):
             bad = [v.reason for v in verified if not v.verified]
             log.info("answer.citation_retry", repo_id=str(self.repo_id), failures=bad)
-            out = await self._synthesize(question, context, ledger=ledger, prior_failures=bad)
+            out = await self._synthesize(
+                question,
+                context,
+                ledger=ledger,
+                prior_failures=bad,
+                conversation_history=session_context,
+            )
             verified = await self.verifier.verify_all(_to_citations(out.citations))
 
         fully_verified = all(v.verified for v in verified)
@@ -134,8 +150,14 @@ class Answerer:
         *,
         ledger: UsageLedger | None,
         prior_failures: list[str] | None = None,
+        conversation_history: str | None = None,
     ) -> _AnswerOut:
-        prompt = f"Context:\n{context}\n\nQuestion: {question}"
+        parts: list[str] = []
+        if conversation_history:
+            parts.append(conversation_history)
+        parts.append(f"Context:\n{context}")
+        parts.append(f"Question: {question}")
+        prompt = "\n\n".join(parts)
         if prior_failures:
             prompt += (
                 "\n\nYour previous citations failed verification:\n"

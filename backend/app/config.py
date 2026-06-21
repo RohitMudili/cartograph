@@ -107,6 +107,10 @@ class Settings(BaseSettings):
         # Every provider the models reference must have a key.
         return all(key_for.get(p) for p in providers if p in key_for)
 
+    # ── Upstash Redis (session storage) ──
+    upstash_redis_rest_url: str = Field(default="")
+    upstash_redis_rest_token: str = Field(default="")
+
     # ── Auth ──
     # Supabase JWT secret for validating access tokens on the backend.
     # Found under Supabase Dashboard → Settings → API → JWT Secret.

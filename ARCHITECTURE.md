@@ -106,9 +106,12 @@ To swap providers or models: change the strings in `.env` (`REASONING_MODEL`,
 - `session.py` — async engine/session. **Contains the Supabase pgbouncer fix**
   (`statement_cache_size=0`). `db_session` test fixture rolls back.
 - `enums.py` — native Postgres enums (stored as UPPERCASE member names).
-- `migrations/` — alembic, sequential `0001`..`0006`, head = `0006`. pgvector enabled
+- `migrations/` — alembic, sequential `0001`..`0009`, head = `0009`. pgvector enabled
   in 0001; graph schema in 0002; RLS deny-all in 0004; chunk tsvector in 0005;
   **0006**: adds `owner_user_id` on repos, `questions` table, and per-user RLS policies.
+  **0007**: adds `user_profiles` table (maps `owner_user_id` to optional email/github).
+  **0008**: adds `session_id` on questions for chat session grouping.
+  **0009**: adds `conversation_id` on questions for per-turn tracking.
   The `migrations/env.py` now includes the pgbouncer `statement_cache_size=0` fix
   (applies when connecting through the Supabase pooler).
 
@@ -146,9 +149,20 @@ lib/supabase/           — Supabase clients + the useUser hook (see "Auth flow"
 The Chat UI calls `lib/api.ts` → the FastAPI backend. Verified citations render as
 amber chips; unverified ones render struck-through in red (the honesty rule).
 
+**Session system:** Active sessions are stored in **Upstash Redis** with 1-hour TTL
+(`app/session/store.py`). Every question carries both a `session_id` (groups into
+chat sessions) and a `conversation_id` (unique per-turn UUID). The backend
+auto-creates sessions when missing; the last 5 Q&A pairs are injected as
+conversation context in the LLM prompt. Session sidebar on the chat page shows
+past sessions with previews and message counts.
+
+**"My repos" page** (`/repos`): `GET /api/repos` returns repos owned by the signed-in
+user. `frontend/app/repos/page.tsx` renders three states (signed-out, empty, list).
+A visible "My repos" link appears in the landing nav and chat header when signed in.
+
 **Not built yet:** Mission Control (`/r/[repo]/run`), Atlas (`/r/[repo]/atlas`),
-the code panel, the app shell/drawer, "my repos"/history. See `FRONTEND.md` for
-specs and `STATUS.md` for status.
+the code panel, the app shell/drawer. See `FRONTEND.md` for specs and `STATUS.md`
+for status.
 
 ---
 
@@ -205,8 +219,8 @@ components/landing/Landing.tsx      — "use client"; composes the sections:
 
 ## Flow 4: Google sign-in (`/auth/*`, Supabase Auth)
 
-Optional sign-in. Anonymous use is the default; sign-in only unlocks "my repos" +
-history once the backend `owner_user_id` work lands (not built yet).
+Optional sign-in. Anonymous use is the default; sign-in unlocks "my repos" / history
+and is required before connecting GitHub for private repo access.
 
 ```
 components/auth/AuthMenu.tsx        — nav: "Sign in" (signed out) | account chip (signed in)
