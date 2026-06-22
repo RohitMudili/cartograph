@@ -259,26 +259,25 @@ work, in rough leverage order:
    as one chunk poisons retrieval. **Still to do:** index other docs
    (`CONTRIBUTING`, `docs/*.md` are covered by `.md`; `.rst`/`.txt` are not) and config (`pyproject`,
    `package.json`) as `CONFIG`/`DOC` nodes.
-2. **Question-type-aware prompting.** The current answerer prompt optimizes for
-   grounded+cited, which yields accurate-but-dry output. Detect intent
-   (onboarding / architecture / specific-symbol / how-to) and adapt the system
-   prompt: onboarding answers should lead with *purpose* ("this is a BK-tree,
-   used for fuzzy/nearest-neighbor lookup"), then *orientation* ("read `find()`
-   first — it's the heart; `add()` is simpler"), then *how to contribute* (tests,
-   conventions, likely change sites). Cite as ever, but the shape should fit the
-   question.
-3. **Retrieve more for broad questions.** Onboarding/architecture questions want
-   breadth (README + entrypoints + top-central nodes), not the top-k a
-   specific-symbol question wants. Tie retrieval breadth + which signals to the
-   detected route.
+2. **Question-type-aware prompting.** ✅ **DONE** (`backend/app/query/answerer.py`,
+   implemented 2026-06-22). The answerer now classifies questions into 6 types
+   (onboarding/architecture/specific-symbol/how-to/comparison/general) using a
+   cheap Flash-tier call before synthesis. Per-type system prompts shape the answer
+   format: onboarding leads with purpose, then orientation; specific-symbol goes
+   straight to signature and call sites. Retrieval breadth adjusts per type
+   (8–15 items). Falls back to `general` on any classification error so questions
+   are never blocked.
+3. **Retrieve more for broad questions.** ✅ **DONE** (shipped as part of the
+   question-type-aware prompting above — `_TOP_K_BY_TYPE` adjusts retrieval
+   breadth: 15 for onboarding/architecture, 8 for specific-symbol, etc.)
 4. **Measure it, don't vibe it.** These improvements get **graded by the eval
    harness** (§6) on an *answer-quality* dimension (purpose stated? oriented?
    actionable?) split by question type — so we tune deliberately. This gap is
    exactly the kind of thing evals exist to catch.
 
-Status: deferred behind the agent fleet / frontend, but #1 (markdown indexing) is
-a small, isolated win that can land any time — it's the clearest single quality
-lever available.
+Status: items #1–3 shipped (markdown indexing, question-type-aware prompting,
+adjusted retrieval breadth). #4 (eval-graded measurement) is the last remaining
+piece and is tied to the eval harness build-out.
 
 ---
 

@@ -74,9 +74,12 @@ backend/app/api/repos.py          ask_question()   — HTTP entry
 - `retrieval.py` — three signals fused. Returns `RetrievedItem`s carrying exact
   `file:line` (so citations are mechanical). RRF is rank-based/scale-free (robust
   when mixing a BM25 score with a cosine distance).
-- `answerer.py` — orchestrates retrieve→synthesize→verify→(regen). The system prompt
-  is here; it optimizes for grounded+cited (which is why answers are accurate but
-  dry — improving this is task #20).
+- `answerer.py` — orchestrates classify→retrieve→synthesize→verify→(regen). A
+  **QuestionClassifier** (lines 189–207) uses the cheap Flash-tier `fast()` model
+  to classify the question into one of 6 types before retrieval. Per-type system
+  prompts (onboarding/architecture/specific-symbol/how-to/comparison/general) shape
+  the answer format; retrieval breadth adjusts per type via `_TOP_K_BY_TYPE`. Falls
+  back to `general` on any error so no question is ever blocked.
 - `verifier.py` — **the trust layer.** Verifies against the `chunks` table (stored
   source slices with exact line ranges) — no re-clone needed. This is what makes
   the product's "verified citations" claim real.

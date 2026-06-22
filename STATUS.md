@@ -3,9 +3,8 @@
 _Working log for picking up where we left off. Not the plan (see PLAN.md) — this
 is "where are we right now and what's next."_
 
-**Last updated:** 2026-06-21 (Redis session store + mandatory session_id/conversation_id
-+ "My repos" page + UserProfile table shipped; dev servers RUNNING at `localhost:8000` /
-`localhost:3000`)
+**Last updated:** 2026-06-22 (question-type-aware prompting shipped — the answerer now
+detects 6 question types and tailors the system prompt + retrieval breadth per type)
 
 ---
 
@@ -94,6 +93,14 @@ door now sells it.
   from retrieved context only, every citation checked against indexed source;
   hallucinated citations are caught + stripped (one regen attempt first), never
   shown as verified. `POST /api/repos/{id}/questions`.
+- **Question-type-aware prompting** — before retrieval, the answerer classifies the
+  question into one of 6 types (onboarding / architecture / specific-symbol / how-to /
+  comparison / general) using the cheap Flash-tier model. Retrieval breadth adjusts
+  per type (8-15 items). The synthesis prompt is tailored to the detected type:
+  onboarding leads with purpose → orientation → how to contribute; architecture
+  focuses on component roles and data flow; specific-symbol goes straight to
+  signature and call sites. All per-type prompts retain the grounded+citation
+  constraints. Falls back to `general` on any error.
 - **Rate limiter** — token-bucket paces calls to `LLM_RPM` (default 10) so we
   don't trip Gemini free-tier 429s.
 - **Infra** — Supabase (async + pgbouncer fix), migrations at head **0009**
@@ -152,15 +159,15 @@ Honest accounting (✅ done · ⚠️ partial · ❌ not built). The "answer one
 core is solid and there's now a real front door; the "full query intelligence +
 streaming + agent fleet + the big graph UI views" is the bulk of remaining work.
 
-### Backend  (answer-one-question core ~95% · full scope ~55%)
+### Backend  (answer-one-question core ~98% · full scope ~58%)
 
 Query / answer layer:
 - ❌ **Router** (local / global / escalate) — every question forces `local` today
 - ❌ **Global route** — big-picture answers from community summaries
 - ❌ **Escalation route + write-back** — the "graph is a learning cache" loop
-- ⚠️ **Answer quality (task #20)** — markdown/README indexing ✅ DONE (see below);
-  question-type-aware prompting ❌ not built (the answerer uses one prompt for all
-  question kinds).
+- ✅ **Answer quality (task #20)** — markdown/README indexing ✅ DONE;
+  question-type-aware prompting ✅ DONE (the answerer classifies questions into 6
+  types and tailors the system prompt + retrieval breadth per type).
 
 Indexing layer:
 - ✅ **Markdown extractor** — `.md` files parse into `DOC` nodes by heading section
@@ -239,8 +246,9 @@ provider-agnostic `llm.py` ready), but none of the fleet itself:
   (credibility moat; also grades task #20)
 - ❌ **Deploy + demo video + writeup**
 
-**Overall v1 ≈ 55%.** Core value (cited Q&A) + auth identity layer is now complete;
-the agent fleet + the live graph UI views are the single biggest remaining chunk.
+**Overall v1 ≈ 58%.** Core value (cited Q&A) + auth identity + question-type-aware
+prompting are now complete; the agent fleet + the live graph UI views are the single
+biggest remaining chunk.
 
 ### Dependency gotchas (new, this session)
 - **`python-jose` doesn't support EC JWK keys** — `jose.jwk.construct()` fails

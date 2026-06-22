@@ -17,7 +17,13 @@ from app.indexer.graph_builder import GraphBuilder
 from app.indexer.parser.python import extract_python
 from app.query import answerer as ans_mod
 from app.query import retrieval as retr_mod
-from app.query.answerer import Answerer, _AnswerOut, _CitationOut
+from app.query.answerer import (
+    Answerer,
+    QuestionType,
+    _AnswerOut,
+    _CitationOut,
+    _QuestionTypeOut,
+)
 from app.query.verifier import Citation, CitationVerifier
 
 pytestmark = pytest.mark.db
@@ -89,15 +95,30 @@ def _patch_retrieval_embed(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def _patch_llm(monkeypatch: pytest.MonkeyPatch, outputs: list[_AnswerOut]) -> None:
-    """Make reasoning().complete_structured return the queued outputs in order."""
+    """Mock both `reasoning` and `fast` LLM tiers.
+
+    The answerer now classifies the question type using `fast()` before
+    synthesizing with `reasoning()`. Both must be patched so the test doesn't
+    make real API calls. The classifier call consumes one output from the
+    front of the list; the answerer uses the rest.
+    """
     calls = {"i": 0}
 
     class _FakeLLM:
         async def complete_structured(self, prompt, schema, *, system=None):
-            out = outputs[min(calls["i"], len(outputs) - 1)]
+            # The classifier uses _QuestionTypeOut schema; return a generic type
+            # so the classifier path is exercised correctly.
+            if schema is _QuestionTypeOut or (
+                hasattr(schema, "__name__") and schema.__name__ == "_QuestionTypeOut"
+            ):
+                return _QuestionTypeOut(type=QuestionType.GENERAL, reasoning="test")
+            # The synthesizer uses _AnswerOut schema; return queued outputs.
+            idx = min(calls["i"], len(outputs) - 1)
             calls["i"] += 1
-            return out
+            return outputs[idx]
 
+    # Patch both tiers — the classifier uses `fast`, the synthesizer uses `reasoning`.
+    monkeypatch.setattr(ans_mod, "fast", lambda ledger=None: _FakeLLM())
     monkeypatch.setattr(ans_mod, "reasoning", lambda ledger=None: _FakeLLM())
 
 
