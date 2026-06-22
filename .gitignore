@@ -17,8 +17,12 @@ build/
 *.key
 
 # Cartograph runtime
-/workspaces/          # cloned repos (sandboxed clone target)
-/data/                # local volumes, exports
+# cloned repos (sandboxed clone target)
+/workspaces/
+# local volumes, exports
+/data/
+# dev server logs (backend-server.log, frontend-server.log)
+*.log
 
 # Editor / OS
 .vscode/

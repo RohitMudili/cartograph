@@ -249,14 +249,15 @@ diagnosis from a real run: the quality is capped by *what we retrieve* and *how 
 prompt*, **not** by the model — which means it's tunable, not fundamental. Scoped
 work, in rough leverage order:
 
-1. **Index docs/markdown (highest leverage).** We currently parse Python only, so
-   the model never sees the `README` — the single best source for "what is this
-   and why." Add a markdown "extractor" that emits a FILE-level `DOC` node plus
-   one `DOC` node **per section** (split on `#`/`##` headers, each with its own
-   line range), flowing through the existing graph builder → summarizer →
-   embeddings → retrieval with no downstream changes. Section-level chunking
-   matters: a whole 500-line README as one chunk poisons retrieval. Also index
-   other docs (`CONTRIBUTING`, `docs/*.md`) and config (`pyproject`,
+1. **Index docs/markdown (highest leverage).** ✅ **DONE** for `.md`
+   (`parser/markdown.py`, wired into `EXTRACTORS`). The model now sees the
+   `README` — the single best source for "what is this and why." The markdown
+   extractor emits a FILE-level `DOC` node plus one `DOC` node **per section**
+   (split on `#`/`##`/`###` headers, each with its own line range), flowing
+   through the existing graph builder → summarizer → embeddings → retrieval with
+   no downstream changes. Section-level chunking matters: a whole 500-line README
+   as one chunk poisons retrieval. **Still to do:** index other docs
+   (`CONTRIBUTING`, `docs/*.md` are covered by `.md`; `.rst`/`.txt` are not) and config (`pyproject`,
    `package.json`) as `CONFIG`/`DOC` nodes.
 2. **Question-type-aware prompting.** The current answerer prompt optimizes for
    grounded+cited, which yields accurate-but-dry output. Detect intent

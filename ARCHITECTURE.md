@@ -17,9 +17,10 @@ backend/app/api/repos.py          create_index()  — the HTTP entry
         ├─ indexer/cloner.py      clone_repo()     — sandboxed git clone (security-hardened)
         ├─ build_graph_from_workspace():
         │    ├─ _iter_source_files()               — walk files, skip noise dirs,
-        │    │                                        match EXTRACTORS by extension (.py only today)
-        │    ├─ indexer/parser/python.py  extract_python()  — tree-sitter → RawSymbol/Import/Call
-        │    │     (produces FileExtract objects defined in parser/types.py)
+        │    │                                        match EXTRACTORS by extension (.py, .md)
+        │    ├─ indexer/parser/python.py  extract_python()    — tree-sitter → RawSymbol/Import/Call
+        │    ├─ indexer/parser/markdown.py extract_markdown() — .md → DOC nodes by heading section
+        │    │     (both produce FileExtract objects defined in parser/types.py)
         │    └─ indexer/graph_builder.py  GraphBuilder.build()
         │          — resolves cross-file edges, computes metrics, bulk-inserts
         │            nodes/edges/chunks to Postgres
@@ -33,9 +34,11 @@ backend/app/api/repos.py          create_index()  — the HTTP entry
   records an `IndexRun`, cleans the workspace in a `finally`.
 - `cloner.py` — **security-critical.** Blocks `file://`, disables hooks, size caps,
   `GIT_TERMINAL_PROMPT=0` for fast-fail on private repos. Don't weaken it.
-- `parser/python.py` — pure (no DB). Walks the tree-sitter AST. To **add a language**:
-  write a new extractor producing the same `FileExtract` shape, register it in
-  `pipeline.py`'s `EXTRACTORS` dict. (Adding markdown is task #20 — see STATUS.md.)
+- `parser/python.py` / `parser/markdown.py` — pure (no DB). `python.py` walks the
+  tree-sitter AST; `markdown.py` splits `.md` into `DOC` nodes by heading section.
+  To **add a language/format**: write a new extractor producing the same
+  `FileExtract` shape and register it in `pipeline.py`'s `EXTRACTORS` dict (keyed by
+  extension). Next candidates: TypeScript/JavaScript, and other doc/config formats.
 - `parser/types.py` — the `RawSymbol`/`RawImport`/`RawCall`/`FileExtract` dataclasses.
   The decoupling between parser output and ORM is deliberate (parsers stay testable).
 - `graph_builder.py` — where the per-file extracts become a connected graph.

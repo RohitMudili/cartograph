@@ -79,8 +79,10 @@ door now sells it.
 
 - **Foundations** — FastAPI, async SQLAlchemy, health/readiness, Docker, CI.
 - **Static indexer** — sandboxed cloner (private-repo fast-fail), tree-sitter
-  Python extractor, graph builder (cross-file imports/calls/inherits with
-  confidence), pipeline + `POST /api/repos`. (psf/cachecontrol: 296 nodes.)
+  Python extractor + a Markdown extractor (`.md` → `DOC` nodes by heading section,
+  so READMEs/docs are indexed and retrievable), graph builder (cross-file
+  imports/calls/inherits with confidence), pipeline + `POST /api/repos`.
+  (psf/cachecontrol: 296 nodes.)
 - **Provider-agnostic LLM** — LangChain `init_chat_model`; Gemini/OpenAI/Anthropic
   swappable via `.env`. Cost via **LangSmith** (no hardcoded prices), our DB.
 - **Semantic layer** — bottom-up summaries + pgvector embeddings; gated on
@@ -156,10 +158,14 @@ Query / answer layer:
 - ❌ **Router** (local / global / escalate) — every question forces `local` today
 - ❌ **Global route** — big-picture answers from community summaries
 - ❌ **Escalation route + write-back** — the "graph is a learning cache" loop
-- ❌ **Answer quality (task #20)** — markdown/README indexing + question-type prompts
+- ⚠️ **Answer quality (task #20)** — markdown/README indexing ✅ DONE (see below);
+  question-type-aware prompting ❌ not built (the answerer uses one prompt for all
+  question kinds).
 
 Indexing layer:
-- ❌ **Markdown / docs / config extractors** (Python-only today — no README indexed)
+- ✅ **Markdown extractor** — `.md` files parse into `DOC` nodes by heading section
+  (`parser/markdown.py`, wired into `EXTRACTORS`), so READMEs/docs feed retrieval.
+- ❌ **Other docs / config extractors** (`.rst`, `.txt`, `.toml`, `.yaml`, etc. — not parsed)
 - ❌ **TypeScript / JavaScript extractor** (v1 was meant to cover TS/JS too)
 - ❌ **Community detection (Leiden) + hierarchical summaries** (GraphRAG big-picture layer)
 - ❌ **Incremental re-indexing** (diff-based; today re-index = full re-run / skip-if-indexed)
