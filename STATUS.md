@@ -3,7 +3,9 @@
 _Working log for picking up where we left off. Not the plan (see PLAN.md) — this
 is "where are we right now and what's next."_
 
-**Last updated:** 2026-06-24 (LangGraph agent fleet built — planner → parallel
+**Last updated:** 2026-06-24 (Mission Control UI built — live + replay agent-event
+stream rendering the fleet; DB is now Supabase-only for every environment; fixed
+the enrichment FK bug. Earlier today: the LangGraph agent fleet — planner → parallel
 explorers → synthesizer → critic → librarian, with agent_events stream + replay/WS
 API; runs during indexing as the ENRICHING phase. Backend tested green.)
 
@@ -203,17 +205,21 @@ Production shape:
 - ❌ **Walkthrough generation** (`GET /repos/{id}/walkthrough`)
 - ⚠️ **Budget caps** — LLM rate limiter done; per-run hard $ cap w/ graceful abort not wired
 
-### Frontend  (~50%)
+### Frontend  (~62%)
 
 - ✅ App scaffold + design tokens
 - ✅ **Landing page** (`/`) — full brand surface: hero, live verified-citation
   terminal, pipeline, economics, magnetic CTA. **Built and shipped.**
-- ✅ **3D hero graph** (R3F) with 2D fallback + lazy-load. Reuses toward Mission Control.
+- ✅ **3D hero graph** (R3F) with 2D fallback + lazy-load. Engine reused by Mission Control.
 - ✅ **Google sign-in (frontend)** — optional Supabase auth in the nav.
 - ✅ **Index-a-repo flow** (now in the hero) · ✅ **Chat console** (working)
-- ❌ **Mission Control** (`/r/[repo]/run`) — live agent roster, territory map, findings
-  feed, cost ticker, replay scrubber. The visual centerpiece. Needs the event stream.
-  (The R3F graph engine from the hero is the seed for its live graph.)
+- ✅ **Mission Control** (`/r/[repo]/run`) — **BUILT.** Resolves the repo's latest run,
+  streams its agent events, renders: agent roster (left), R3F **territory graph** that
+  lights up as explorers touch symbols (center), findings/verdict feed with visible
+  rejections (right), phase/cost telemetry footer, and a **replay scrubber**
+  (LIVE/REPLAY · play/pause · 1×/4×/16× · seek). `components/mission/` +
+  `lib/{events,runState,useRunEvents}.ts`. Replay-first: one reducer renders live and
+  replayed runs identically. Verified end-to-end via headless capture.
 - ❌ **Atlas** (`/r/[repo]/atlas`) — force-directed / semantic-zoom graph + inspector
 - ❌ **Code panel** — clicking a Chat citation chip should open source at the lines
 - ❌ **Walkthrough view**
@@ -226,11 +232,12 @@ Production shape:
   has mandatory `session_id` + `conversation_id`.
 - ✅ **Redis session store** — Upstash Redis with 1-hour TTL, last 5 Q&A pairs
   for conversation continuity.
-- ❌ **Shared infra** — WebSocket event store (Zustand), replay-from-fixtures harness, Storybook
+- ✅ **Event store / replay-first infra** — `useRunEvents` (replay via `?after_seq=`
+  then live WS) + a pure `reduceRun` reducer (events → roster/feed/graph/totals).
 - ❌ **Hardening** — skeletons, error boundaries, full responsive/mobile pass beyond
-  the landing, full a11y pass
+  the landing, full a11y pass; Storybook
 
-### Agent fleet  (~85% — BUILT and tested; integration into Mission Control UI pending)
+### Agent fleet  (~90% — BUILT, tested, and wired into Mission Control)
 
 The PLAN §2.2 topology is built end to end (`backend/app/agents/`):
 - ✅ **Supervisor** (`graph_def.py`) — `run_enrichment_fleet`: planner → parallel
@@ -260,28 +267,32 @@ The PLAN §2.2 topology is built end to end (`backend/app/agents/`):
 - ✅ **Events API** (`api/events.py`) — `GET .../runs/{run_id}/events?after_seq=`
   (replay) + `WS .../runs/{run_id}/events/ws` (live: backfill then stream).
 - ✅ **Pipeline integration** — runs after summaries (`ENRICHING` status), before
-  `INDEXED`; gated on `llm_available`. Enrichment stats land in `repo.stats`.
+  `INDEXED`; gated on `llm_available`. **Commits the IndexRun before enrichment** so
+  the separate event-session can satisfy the `agent_events → index_runs` FK (the
+  earlier bug: events failed to persist + the run rolled back). Enrichment is
+  best-effort and non-fatal; stats land in `repo.stats`.
+- ✅ **Mission Control UI consumes the stream** (frontend, see Frontend section).
 - ✅ **Tests** — `tests/integration/test_fleet.py`: planner, tools, critic
   auto-reject, librarian write-back (deterministic fake LLM, real Postgres).
-- ⏳ **Remaining:** wire the WS stream into a **Mission Control UI** (frontend);
-  feed enriched annotations into the query/answer layer; a full
-  explorer-revision loop (currently the critic re-judges rejects once).
+- ⏳ **Remaining:** feed enriched annotations into the query/answer layer; a full
+  explorer-revision loop (currently the critic re-judges rejects once); harden the
+  LLM retry/backoff for sustained Gemini 429/503 (a free-tier quota spike can abort
+  the fleet — the index still completes, but enrichment is skipped that run).
 
-> **Key dependency:** agent fleet → event stream (backend) → Mission Control (frontend)
-> are **one connected feature** — none demos without the other two. Replay-first design
-> lets the UI build against recorded event logs first, but the fleet still must be built.
+> **The agent fleet → event stream → Mission Control are now all built and wired**
+> as one connected feature. Replay-first: the UI renders recorded runs and live runs
+> through the same reducer.
 
 ### Cross-cutting
 - ❌ **Eval harness** — golden Q&A + citation precision/recall + answer-quality scoreboard
   (credibility moat; also grades task #20)
 - ❌ **Deploy + demo video + writeup**
 
-**Overall v1 ≈ 70%.** Core value (cited Q&A) + auth identity + question-type-aware
-prompting + the **multi-agent enrichment fleet with a live event stream** are now
-complete on the backend. The single biggest remaining chunk is the **frontend**
-that renders the fleet: **Mission Control** (consuming the WS event stream) and
-**Atlas** (the graph + the annotations the librarian writes), plus feeding the
-enriched annotations into the answer layer.
+**Overall v1 ≈ 75%.** Core value (cited Q&A) + auth identity + question-type-aware
+prompting + the **multi-agent enrichment fleet** + **Mission Control** (the live +
+replay view that renders it) are now complete end to end. Biggest remaining chunks:
+**Atlas** (the graph + the annotations the librarian writes), feeding the enriched
+annotations into the answer layer, the eval harness, and deploy/demo/writeup.
 
 ### Dependency gotchas (new, this session)
 - **`python-jose` doesn't support EC JWK keys** — `jose.jwk.construct()` fails
@@ -304,9 +315,13 @@ enriched annotations into the answer layer.
 - **Test data in Supabase:** indexing test runs left rows in there
   (benhoyt/pybktree + any `test/...` repos). Harmless; clean out before indexing
   repos you care about (cascade-deletes from the `repos` row).
-- `.env` is configured + working (Supabase + Gemini + LangSmith). `frontend/.env.local`
-  holds the real Supabase URL + anon key. Local dev DB = Supabase (needs internet);
-  CI = throwaway Postgres (isolated).
+- **ONE database, every environment: Supabase.** There is no local Postgres — the
+  app and local dev both write to Supabase (`backend/.env` `DATABASE_URL`, needs
+  internet). The ONLY exception is the `db`-marked test suite, which uses a
+  disposable Postgres via `TEST_DATABASE_URL` (CI provides one; tests skip if unset)
+  so they never touch real data. `frontend/.env.local` holds the Supabase URL +
+  anon key. (`config.py` no longer defaults to a local DB; docker-compose has no
+  `db` service.)
 - **`.gitignore` tracks `.env*.example` templates** but ignores real env files.
 - `LLM_RPM` is the throughput knob — 10 for free tier, 1000+ for paid.
 - **Backend gate before pushing:** `ruff check` + `ruff format --check` +

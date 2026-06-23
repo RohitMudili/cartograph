@@ -36,7 +36,15 @@ export interface Repo {
     chunks?: number;
     summarized?: number;
     size_bytes?: number;
+    enrichment?: {
+      subsystems: number;
+      findings: number;
+      accepted: number;
+      annotations: number;
+    } | null;
   };
+  // Most recent index run id — used to load Mission Control's event stream.
+  latest_run_id?: string | null;
 }
 
 export interface IndexResult {

@@ -36,7 +36,7 @@ only), auth/multi-user, collaborative cursors, VS Code webview.
 /auth/signout          POST-only sign-out                               ✅ BUILT
 /auth/auth-error       Sign-in failure surface                          ✅ BUILT
 /r/[repo]              Redirects to /run while indexing, else /atlas     ❌ (chat is the only /r route today)
-/r/[repo]/run          Mission Control — live during runs, Replay after  ❌
+/r/[repo]/run          Mission Control — live during runs, Replay after  ✅ BUILT
 /r/[repo]/atlas        Architecture graph + inspector + walkthrough       ❌
 /repos                "My repos" page (signed-out/empty/list states)      ✅ BUILT
 /r/[repo]/chat         Research console (threads, citations, session sidebar) ✅ BUILT
@@ -150,7 +150,24 @@ the user is signed in. The `Landing.tsx` Nav component shows `useUser()` state a
 conditionally renders the link next to "Source". See `ARCHITECTURE.md` Flow 4 and
 `PLAN.md §9B`.
 
-### 5.2 Mission Control `/r/[repo]/run`
+### 5.2 Mission Control `/r/[repo]/run` — ✅ BUILT
+
+> **Status:** built (`components/mission/` + `lib/{events,runState,useRunEvents}.ts`).
+> The spec below is the original plan; **"As built"** notes where it diverged. The
+> data path is replay-first: resolve `repo.latest_run_id` → replay the durable
+> `agent_events` log (`?after_seq=`) → follow the live WS. A pure `reduceRun`
+> reducer turns events into the view model, so live and replayed runs render
+> identically. Verified end-to-end via headless capture.
+>
+> **As built:** `[roster | territory graph (R3F) | findings feed]` over a
+> **ReplayScrubber** (LIVE/REPLAY · play/pause · 1×/4×/16× · seek) and a
+> **RunFooter** (phase pipeline + findings/verified/rejected/tokens/cost). Roster
+> cards show role glyph + state dot (pulsing amber=working, green ✓=done, red=failed)
+> + activity + tool/finding counts. Feed shows findings and critic verdicts with
+> **rejections struck-through and kept visible**. The territory graph is the hero's
+> R3F engine: nodes are the symbols the fleet touched, verified ones lock to amber.
+> Deferred vs the plan below: the treemap/icicle territory layout (we use the 3D
+> node field instead), the per-agent token sparkline, and Cancel.
 
 The spectacle view; Committed color strategy (amber earns ~30% of the surface).
 Grid: `[roster 320px | territory map 1fr | findings 380px]` over a 64px footer.
@@ -265,8 +282,10 @@ components/                                                         (planned vs 
 │   VerificationStrip/EvalTable were replaced by the graph hero + VerifiedAnswer
 │   (their data — real replays, eval results — does not exist yet).
 ├── auth/          # ✅ AuthMenu (nav sign-in → account chip + sign-out)
-├── telemetry/     # ❌ AgentCard, AgentBadge, CostTag, FeedRow, EventFeed,
-│   RunFooter, TimelineScrubber, TerritoryMap
+├── mission/       # ✅ BUILT — Mission Control: MissionControl, AgentRoster,
+│   FindingsFeed, RunFooter, ReplayScrubber, TerritoryGraph (R3F). Driven by the
+│   pure reducer lib/runState.ts + the lib/useRunEvents.ts hook (replay + live WS).
+│   (Supersedes the planned telemetry/ dir for the live-run view.)
 ├── atlas/         # ❌ GraphCanvas, Inspector, NodeChip, EdgeList,
 │   WalkthroughOverlay, GraphSearch, MiniMap
 ├── chat/          # ⚠️ Chat is built but as one ChatConsole.tsx (under app/r/[repo]/chat/),

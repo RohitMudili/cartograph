@@ -56,22 +56,28 @@ React Three Fiber (3D hero) · Supabase Auth (Google sign-in) · IBM Plex.
 
 ## Local development
 
-```bash
-cp backend/.env.example backend/.env     # add your GEMINI_API_KEY
-docker compose up --build                # Postgres + API at :8000
-```
-
-Or run the API directly against a local Postgres:
+There is **one database for every environment: Supabase** (Postgres + pgvector).
+Local dev writes to Supabase too — no local Postgres to run.
 
 ```bash
+cp backend/.env.example backend/.env     # set DATABASE_URL (Supabase) + GOOGLE_API_KEY
 cd backend
 uv sync --extra dev
-uv run alembic upgrade head
-uv run uvicorn app.main:app --reload
+uv run alembic upgrade head              # migrates the Supabase DB
+uv run uvicorn app.main:app --reload     # API at :8000
+```
+
+Or via Docker (also talks to Supabase via `backend/.env`):
+
+```bash
+docker compose up --build                # API at :8000
 ```
 
 Health check: `GET http://localhost:8000/health` (liveness),
 `GET /health/ready` (DB + pgvector readiness).
+
+> Automated `db`-marked tests are the only exception — they run against a
+> disposable Postgres (set `TEST_DATABASE_URL`), never Supabase.
 
 ## Development commands
 

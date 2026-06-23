@@ -116,10 +116,12 @@ These are the things that have actually bitten us. Internalize them.
    uv run pyright               # types (must be 0 errors)
    uv run pytest -m "not network"   # tests
    ```
-2. **Local dev DB is Supabase** (set in `backend/.env`), so it **needs internet**.
-   CI uses a throwaway Postgres. The local docker-compose Postgres (port **5433**,
-   not 5432 — 5432 is often taken) is used for running the DB-backed tests:
-   `export DATABASE_URL="postgresql+asyncpg://cartograph:cartograph@localhost:5433/cartograph"`.
+2. **ONE database, every environment: Supabase.** There is no local Postgres.
+   The app and local dev both write to Supabase (set `DATABASE_URL` in
+   `backend/.env`), so it **needs internet**. The *only* exception is the
+   automated `db`-marked test suite, which runs against a disposable Postgres via
+   `TEST_DATABASE_URL` (CI provides an ephemeral one) so tests never touch real
+   data. Don't reintroduce a local dev DB or a docker-compose `db` service.
 3. **Supabase + asyncpg needs the pgbouncer fix** — already handled in `db/session.py`
    (`statement_cache_size=0` when the URL contains `pooler.supabase.com`). Don't remove it.
 4. **`DATABASE_URL` must use `postgresql+asyncpg://`** (async driver), not plain
@@ -210,12 +212,17 @@ cd frontend && npm install && npm run dev      # http://localhost:3000
 jumps straight to chat for an instant demo.
 
 ### Run the DB-backed tests locally
+Tests must NOT hit Supabase — point `TEST_DATABASE_URL` at a disposable Postgres
+(spin one up however you like; it's the one place a throwaway DB is used). Without
+it, `db`-marked tests skip.
 ```bash
 cd backend
-docker compose -f ../docker-compose.yml up -d db          # local Postgres on 5433
-export DATABASE_URL="postgresql+asyncpg://cartograph:cartograph@localhost:5433/cartograph"
-uv run alembic upgrade head
-uv run pytest -m "not network"                            # all but live-API tests
+docker run -d --name cg-testdb -p 5433:5432 \
+  -e POSTGRES_USER=cartograph -e POSTGRES_PASSWORD=cartograph -e POSTGRES_DB=cartograph \
+  pgvector/pgvector:pg16
+export TEST_DATABASE_URL="postgresql+asyncpg://cartograph:cartograph@localhost:5433/cartograph"
+DATABASE_URL="$TEST_DATABASE_URL" uv run alembic upgrade head   # migrate the sandbox
+uv run pytest -m "not network"                                  # all but live-API tests
 ```
 
 ---

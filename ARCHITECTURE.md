@@ -148,7 +148,15 @@ components/
     VerifiedAnswer.tsx  — the live "answer types in, citation resolves to verified" terminal
     MagneticButton.tsx  — cursor-leaning CTA (motion values, not state)
   auth/AuthMenu.tsx     — nav sign-in button → account chip + sign-out
+  mission/              — Mission Control (see "Flow 6" below)
+    MissionControl.tsx  — resolves latest run, wires the event stream + layout
+    AgentRoster.tsx · FindingsFeed.tsx · RunFooter.tsx · ReplayScrubber.tsx
+    TerritoryGraph.tsx  — R3F graph that lights up as explorers touch symbols
+app/r/[repo]/run/page.tsx — Mission Control route (awaits params)
 lib/api.ts              — typed client mirroring the backend response models
+lib/events.ts           — agent-event types + replay fetch + WS URL helper
+lib/runState.ts         — pure reducer: events[] → roster/feed/graph/totals
+lib/useRunEvents.ts     — hook: replay (?after_seq=) then live WS, + replay scrubber
 lib/supabase/           — Supabase clients + the useUser hook (see "Auth flow")
 ```
 
@@ -166,9 +174,9 @@ past sessions with previews and message counts.
 user. `frontend/app/repos/page.tsx` renders three states (signed-out, empty, list).
 A visible "My repos" link appears in the landing nav and chat header when signed in.
 
-**Not built yet:** Mission Control (`/r/[repo]/run`), Atlas (`/r/[repo]/atlas`),
-the code panel, the app shell/drawer. See `FRONTEND.md` for specs and `STATUS.md`
-for status.
+**Not built yet:** Atlas (`/r/[repo]/atlas`), the code panel, the app shell/drawer.
+See `FRONTEND.md` for specs and `STATUS.md` for status. (Mission Control
+`/r/[repo]/run` is built — see Flow 6.)
 
 ---
 
@@ -291,9 +299,47 @@ agents/graph_def.py  run_enrichment_fleet(session, repo_id, run_id, event_sessio
   publishes to an in-process `hub` for live WS subscribers. `load_events` replays.
 - `api/events.py` — `GET .../runs/{run_id}/events?after_seq=` (replay) +
   `WS .../runs/{run_id}/events/ws` (backfill then live).
+- **`pipeline.py` commits the IndexRun BEFORE calling the fleet.** The emitter's
+  dedicated session is a separate transaction, and `agent_events.run_id` FKs to
+  `index_runs.id` — so the run must be committed (not just flushed) or every event
+  insert hits a FK violation. (This was a real bug: events silently failed and the
+  whole index rolled back.)
 - **Budgets:** `max_run_cost_usd` checked between phases, a 15-min run timeout,
   per-explorer tool/step caps. **Concurrency:** `max_agent_concurrency` semaphore.
 - Tested in `tests/integration/test_fleet.py` with a deterministic fake LLM.
+
+---
+
+## Flow 6: Mission Control (`/r/[repo]/run`) — watch the fleet
+
+The frontend that renders Flow 5's event stream, live or replayed.
+
+```
+app/r/[repo]/run/page.tsx        → <MissionControl repoId>
+components/mission/MissionControl.tsx
+  ├─ api.getRepo(repoId) → repo.latest_run_id   (resolve the run)
+  ├─ useRunEvents(repoId, runId, mode)           (lib/useRunEvents.ts)
+  │    replay: GET .../events?after_seq=0   then  live: WS .../events/ws
+  │    finished run → REPLAY (scrubber); in-progress → LIVE (WS)
+  ├─ reduceRun(events) → RunState                (lib/runState.ts, PURE)
+  └─ layout: AgentRoster | TerritoryGraph (R3F) | FindingsFeed
+             + ReplayScrubber + RunFooter (phase/tokens/cost)
+```
+
+**Key files & what to know:**
+- `lib/runState.ts` — a **pure** reducer `events[] → {phase, agents, feed, touched,
+  verified, totals}`. Because it's pure, live and replayed runs render identically
+  (the replay-first invariant). Mission Control renders this and nothing else.
+- `lib/useRunEvents.ts` — backfills from the durable log, then either follows the
+  live WS (de-duping by `seq`) or, in replay mode, reveals recorded events on a
+  timer (play/pause/speed/seek).
+- `TerritoryGraph.tsx` — R3F (same engine family as the landing hero). Nodes are the
+  fqnames the fleet has `touched`; `verified` ones lock to amber. Lazy-loaded
+  (`ssr:false`) so Three.js stays off the initial bundle.
+- `FindingsFeed.tsx` — findings + critic verdicts; **rejected verdicts stay visible,
+  struck-through** (the honesty rule). `RunFooter.tsx` — phase pipeline + cost ticker.
+- Backend touchpoint: `RepoResponse.latest_run_id` (added to `api/repos.py`) is how
+  the page finds the run to stream.
 
 ---
 
@@ -301,7 +347,6 @@ agents/graph_def.py  run_enrichment_fleet(session, repo_id, run_id, event_sessio
 
 - **Query router / global / escalate routes** → `PLAN.md §2.3`. Goes in `query/`.
   (The escalation route can reuse the fleet's explorer + tools.)
-- **Mission Control UI** (consumes the WS event stream above) → `FRONTEND.md §5.2`.
 - **Atlas UI** (renders the graph + the librarian's annotations) → `FRONTEND.md §5.3`.
 - **Feeding enriched annotations into the answer layer** — the librarian writes
   `Node.annotations`; the answerer doesn't read them yet.

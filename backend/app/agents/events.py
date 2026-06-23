@@ -104,9 +104,14 @@ class EventEmitter:
             self._session.add(row)
             try:
                 await self._session.commit()
-            except Exception:  # noqa: BLE001 — event persistence is best-effort, never kills the run
+            except Exception as exc:  # noqa: BLE001 — event persistence is best-effort, never kills the run
                 await self._session.rollback()
-                log.warning("events.persist_failed", run_id=str(self.run_id), seq=seq)
+                log.warning(
+                    "events.persist_failed",
+                    run_id=str(self.run_id),
+                    seq=seq,
+                    error=f"{exc.__class__.__name__}: {exc}",
+                )
 
         model = AgentEventModel(
             seq=seq,

@@ -850,8 +850,9 @@ Each week ends in something demoable. Cut scope, never quality of what ships.
 - ⚠️ Next.js app: ✅ **Chat** (working — threaded Q&A, verified citation chips,
   transparency strip; ❌ code panel on chip click). ✅ **Landing page** (brand
   surface, with a 3D R3F hero graph + a live verified-citation terminal).
-  ✅ **Google sign-in** (Supabase, frontend wired; backend `owner_user_id` TODO).
-  ❌ **Mission Control** (live WS). ❌ **Atlas** (semantic-zoom graph).
+  ✅ **Google sign-in** (Supabase, end to end — frontend + backend JWT + `owner_user_id`).
+  ✅ **Mission Control** (`/r/[repo]/run`, live + replay agent-event stream).
+  ❌ **Atlas** (semantic-zoom graph).
 - ❌ Onboarding walkthrough generation + overlay.
 - ✅ Design tokens (DESIGN.md, dark instrument-panel) wired; ⚠️ design/polish pass
   done on the landing + chat, not the (unbuilt) big views; ❌ the screen-recordable demo.

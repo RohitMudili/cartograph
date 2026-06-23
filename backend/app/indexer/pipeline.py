@@ -202,8 +202,14 @@ async def index_repo(session: AsyncSession, url: str, *, branch: str | None = No
             # Agent-fleet enrichment (PLAN.md §2.2) — explorers map the now-summarized
             # graph and write verified findings back. Non-fatal: if it fails or hits a
             # budget, the repo still indexes on the static + summary layers.
+            #
+            # COMMIT before enrichment: the fleet's event emitter writes agent_events
+            # on a SEPARATE session, and those rows FK to index_runs.id. That session
+            # can only see the IndexRun if it's already committed (a flush keeps it in
+            # this session's uncommitted transaction). Committing here also makes the
+            # index durable before the best-effort fleet runs.
             repo.status = RepoStatus.ENRICHING
-            await session.flush()
+            await session.commit()
             fleet_result = await _run_enrichment(session, repo.id, run.id, ledger)
         else:
             log.info("index.summaries_skipped", repo_id=str(repo.id), reason="no_llm_key")

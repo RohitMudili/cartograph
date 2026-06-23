@@ -80,7 +80,7 @@ export function ChatConsole({ repoId }: { repoId: string }) {
     };
   }, [repoId]);
 
-  // Create a new session and set it as active
+  // Create a new session and set it as active.
   async function newSession() {
     try {
       const { session_id } = await api.createSession(repoId);
@@ -135,10 +135,14 @@ export function ChatConsole({ repoId }: { repoId: string }) {
     }
   }
 
-  // Auto-create a session on first mount if none is active
+  // Auto-create a session on first mount if none is active. `newSession` is
+  // async (setState runs after the await), so this is a network side-effect, not
+  // a synchronous render-driven update; it intentionally fires only on the gate
+  // conditions, not on newSession's identity.
   useEffect(() => {
     if (!sessionsLoading && !activeSessionId && repo?.status === "indexed") {
-      newSession();
+      // eslint-disable-next-line react-hooks/set-state-in-effect, react-hooks/exhaustive-deps -- async network call; setState runs after await; intentionally fires on gate conditions only
+      void newSession();
     }
   }, [sessionsLoading, activeSessionId, repo?.status]);
 

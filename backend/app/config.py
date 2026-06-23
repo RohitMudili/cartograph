@@ -130,9 +130,13 @@ class Settings(BaseSettings):
         return self.langsmith_tracing and bool(self.langsmith_api_key)
 
     # ── Database ──
+    # Single database for every environment: Supabase Postgres + pgvector. There
+    # is no separate local DB — set DATABASE_URL (in backend/.env) to the Supabase
+    # async DSN (postgresql+asyncpg://...). The only exception is the automated
+    # test suite, which uses an isolated sandbox DB via TEST_DATABASE_URL.
     database_url: str = Field(
-        default="postgresql+asyncpg://cartograph:cartograph@localhost:5432/cartograph",
-        description="SQLAlchemy async DSN",
+        default="",
+        description="SQLAlchemy async DSN — the Supabase Postgres URL (set in .env)",
     )
 
     # ── App ──

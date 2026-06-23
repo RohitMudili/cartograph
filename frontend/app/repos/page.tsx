@@ -53,7 +53,8 @@ export default function ReposPage() {
   }, [user, authLoading]);
 
   useEffect(() => {
-    fetchRepos();
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- async network call; setState runs after await
+    void fetchRepos();
   }, [fetchRepos]);
 
   return (

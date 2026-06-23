@@ -25,7 +25,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.jwt import AuthUser, get_optional_user
-from app.db.models import Question, Repo
+from app.db.models import IndexRun, Question, Repo
 from app.db.session import get_session
 from app.indexer.cloner import CloneError, PrivateRepoError
 from app.indexer.pipeline import index_repo
@@ -59,6 +59,9 @@ class RepoResponse(BaseModel):
     default_branch: str | None
     indexed_at: str | None
     stats: dict
+    # The most recent index run's id, so the UI can load its agent-event stream
+    # (Mission Control). None if the repo has never had a run.
+    latest_run_id: str | None = None
 
 
 class RepoSummary(BaseModel):
@@ -223,6 +226,12 @@ async def get_repo(
     repo = await session.get(Repo, repo_id)
     if repo is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repo not found")
+    latest_run_id = await session.scalar(
+        select(IndexRun.id)
+        .where(IndexRun.repo_id == repo_id)
+        .order_by(IndexRun.started_at.desc())
+        .limit(1)
+    )
     return RepoResponse(
         id=str(repo.id),
         url=repo.url,
@@ -231,6 +240,7 @@ async def get_repo(
         default_branch=repo.default_branch,
         indexed_at=repo.indexed_at.isoformat() if repo.indexed_at else None,
         stats=repo.stats,
+        latest_run_id=str(latest_run_id) if latest_run_id else None,
     )
 
 
