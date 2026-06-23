@@ -108,6 +108,26 @@ async def _get_or_create_repo(session: AsyncSession, url: str) -> Repo:
     return repo
 
 
+async def _run_enrichment(
+    session: AsyncSession, repo_id: uuid.UUID, run_id: uuid.UUID, ledger: UsageLedger
+):
+    """Run the agent fleet over the summarized graph. Best-effort: any failure is
+    swallowed (the fleet itself also catches internally) so a bad enrichment never
+    fails an otherwise-good index. Events are persisted on a dedicated session so
+    their commits don't touch the main indexing transaction."""
+    from app.agents.graph_def import run_enrichment_fleet
+    from app.db.session import get_sessionmaker
+
+    try:
+        async with get_sessionmaker()() as event_session:
+            return await run_enrichment_fleet(
+                session, repo_id, run_id=run_id, event_session=event_session, ledger=ledger
+            )
+    except Exception as exc:  # noqa: BLE001 — enrichment must never fail the index
+        log.warning("index.enrichment_failed", repo_id=str(repo_id), error=str(exc))
+        return None
+
+
 async def build_graph_from_workspace(
     session: AsyncSession, repo_id: uuid.UUID, workspace: Path
 ) -> BuildStats:
@@ -173,10 +193,18 @@ async def index_repo(session: AsyncSession, url: str, *, branch: str | None = No
         # enrichment just doesn't run.
         ledger = UsageLedger()
         summary_stats = None
+        fleet_result = None
         if get_settings().llm_available:
             repo.status = RepoStatus.SUMMARIZING
             await session.flush()
             summary_stats = await Summarizer(session, repo.id, ledger=ledger).run()
+
+            # Agent-fleet enrichment (PLAN.md §2.2) — explorers map the now-summarized
+            # graph and write verified findings back. Non-fatal: if it fails or hits a
+            # budget, the repo still indexes on the static + summary layers.
+            repo.status = RepoStatus.ENRICHING
+            await session.flush()
+            fleet_result = await _run_enrichment(session, repo.id, run.id, ledger)
         else:
             log.info("index.summaries_skipped", repo_id=str(repo.id), reason="no_llm_key")
 
@@ -190,6 +218,14 @@ async def index_repo(session: AsyncSession, url: str, *, branch: str | None = No
             "chunks": stats.chunks,
             "size_bytes": clone.size_bytes,
             "summarized": summary_stats.summarized if summary_stats else 0,
+            "enrichment": {
+                "subsystems": fleet_result.subsystems,
+                "findings": fleet_result.findings,
+                "accepted": fleet_result.accepted,
+                "annotations": fleet_result.annotations_written,
+            }
+            if fleet_result
+            else None,
         }
         # Token counts recorded; cost (usd) is filled from LangSmith when enabled.
         run.token_usage = ledger.summary()

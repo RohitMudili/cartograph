@@ -3,8 +3,9 @@
 _Working log for picking up where we left off. Not the plan (see PLAN.md) — this
 is "where are we right now and what's next."_
 
-**Last updated:** 2026-06-22 (question-type-aware prompting shipped — the answerer now
-detects 6 question types and tailors the system prompt + retrieval breadth per type)
+**Last updated:** 2026-06-24 (LangGraph agent fleet built — planner → parallel
+explorers → synthesizer → critic → librarian, with agent_events stream + replay/WS
+API; runs during indexing as the ENRICHING phase. Backend tested green.)
 
 ---
 
@@ -193,8 +194,11 @@ Auth / identity:
 
 Production shape:
 - ❌ **Background worker + job queue** (indexing runs inline in the request today)
-- ❌ **WebSocket event stream** (`/ws/runs/{id}`) — backbone for fleet + Mission Control
-- ❌ **`agent_events` table + event bus** (persisted replay/stream log)
+- ✅ **WebSocket event stream** — `WS /api/repos/{id}/runs/{run_id}/events/ws`
+  (backfill + live) and a replay `GET …/events?after_seq=`. Backs the fleet; the
+  Mission Control UI that consumes it is the next frontend piece.
+- ✅ **`agent_events` table + event bus** — migration 0010; `events.py` persists
+  with per-run monotonic `seq` and fans out to an in-process hub.
 - ❌ **Graph-slice API** (`GET /repos/{id}/graph`) — what Atlas queries
 - ❌ **Walkthrough generation** (`GET /repos/{id}/walkthrough`)
 - ⚠️ **Budget caps** — LLM rate limiter done; per-run hard $ cap w/ graceful abort not wired
@@ -226,16 +230,42 @@ Production shape:
 - ❌ **Hardening** — skeletons, error boundaries, full responsive/mobile pass beyond
   the landing, full a11y pass
 
-### Agent fleet  (0% — all spec, no code)
+### Agent fleet  (~85% — BUILT and tested; integration into Mission Control UI pending)
 
-The whole PLAN §2.2 topology is unbuilt. Foundation exists (`langgraph` installed,
-provider-agnostic `llm.py` ready), but none of the fleet itself:
-- ❌ LangGraph supervisor graph (planner → explorers → synthesizer → critic → librarian)
-- ❌ Planner / Explorer (parallel) / Synthesizer / Critic agents
-- ❌ Librarian (writes verified findings back to the graph)
-- ❌ Agent tools (`read_file` / `get_neighbors` / `search_graph` / `grep`)
-- ❌ Inter-agent Pydantic schemas · run budgets (tool-call caps, token budget, timeouts)
-- ❌ Event emission → event log → WebSocket → Mission Control
+The PLAN §2.2 topology is built end to end (`backend/app/agents/`):
+- ✅ **Supervisor** (`graph_def.py`) — `run_enrichment_fleet`: planner → parallel
+  explorers (capped by `max_agent_concurrency`) → synthesizer → critic (one
+  revision round) → librarian. Per-run cost budget (`max_run_cost_usd`) + a 15-min
+  wall-clock timeout + per-explorer tool/step caps. Non-fatal: enrichment failure
+  never fails the index.
+- ✅ **Planner** (`planner.py`) — reads the structural skeleton (files, central
+  symbols, doc summaries) → `ExplorationPlan` of 3-8 subsystems (reasoning tier).
+- ✅ **Explorer** (`explorer.py`) — agentic bounded tool-use loop, one per subsystem,
+  parallel (fast tier) → structured `Finding`s. Each gets its own read session.
+- ✅ **Synthesizer** (`synthesizer.py`) — merges findings → `RepoModel` (subsystem
+  descriptions, cross-cutting flows, onboarding walkthrough; reasoning tier).
+- ✅ **Critic** (`critic.py`) — re-reads cited code, accepts/rejects each finding;
+  findings targeting a non-existent symbol are auto-rejected with no LLM call.
+- ✅ **Librarian** (`librarian.py`) — writes accepted findings into
+  `Node.annotations` (attributed: source, verified, run_id) + stores the RepoModel
+  on the REPO node. Not an LLM agent.
+- ✅ **Agent tools** (`tools.py`) — `read_file` / `get_node` / `get_neighbors` /
+  `search_graph` (reuses `Retriever`) / `grep`, all repo-scoped, read-only, served
+  from Postgres (no re-clone), with per-call output caps + a tool-call counter.
+- ✅ **Inter-agent schemas** (`schemas.py`) — all payloads are validated Pydantic
+  (`ExplorationPlan`, `Subsystem`, `Finding`, `RepoModel`, `Verdict`, …).
+- ✅ **Event stream** (`events.py` + `AgentEvent` model + migration 0010) — every
+  phase/spawn/tool_call/finding/verdict/error/done event is persisted with a
+  per-run monotonic `seq` and fanned out to a live in-process hub.
+- ✅ **Events API** (`api/events.py`) — `GET .../runs/{run_id}/events?after_seq=`
+  (replay) + `WS .../runs/{run_id}/events/ws` (live: backfill then stream).
+- ✅ **Pipeline integration** — runs after summaries (`ENRICHING` status), before
+  `INDEXED`; gated on `llm_available`. Enrichment stats land in `repo.stats`.
+- ✅ **Tests** — `tests/integration/test_fleet.py`: planner, tools, critic
+  auto-reject, librarian write-back (deterministic fake LLM, real Postgres).
+- ⏳ **Remaining:** wire the WS stream into a **Mission Control UI** (frontend);
+  feed enriched annotations into the query/answer layer; a full
+  explorer-revision loop (currently the critic re-judges rejects once).
 
 > **Key dependency:** agent fleet → event stream (backend) → Mission Control (frontend)
 > are **one connected feature** — none demos without the other two. Replay-first design
@@ -246,9 +276,12 @@ provider-agnostic `llm.py` ready), but none of the fleet itself:
   (credibility moat; also grades task #20)
 - ❌ **Deploy + demo video + writeup**
 
-**Overall v1 ≈ 58%.** Core value (cited Q&A) + auth identity + question-type-aware
-prompting are now complete; the agent fleet + the live graph UI views are the single
-biggest remaining chunk.
+**Overall v1 ≈ 70%.** Core value (cited Q&A) + auth identity + question-type-aware
+prompting + the **multi-agent enrichment fleet with a live event stream** are now
+complete on the backend. The single biggest remaining chunk is the **frontend**
+that renders the fleet: **Mission Control** (consuming the WS event stream) and
+**Atlas** (the graph + the annotations the librarian writes), plus feeding the
+enriched annotations into the answer layer.
 
 ### Dependency gotchas (new, this session)
 - **`python-jose` doesn't support EC JWK keys** — `jose.jwk.construct()` fails

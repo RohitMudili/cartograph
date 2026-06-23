@@ -35,8 +35,12 @@ from app.config import Settings, get_settings
 log = structlog.get_logger(__name__)
 
 # Root under which all clones live. Gitignored; mounted on a quota'd volume in
-# production. Each clone gets an isolated subdirectory.
-WORKSPACE_ROOT = Path("workspaces")
+# production. Each clone gets an isolated subdirectory. Anchored to an ABSOLUTE
+# path under the backend dir (this file is backend/app/indexer/cloner.py, so
+# parents[2] is backend/) so clones always land in one predictable place
+# regardless of the process's current working directory — a relative "workspaces"
+# leaked clones into whatever CWD the server happened to run from.
+WORKSPACE_ROOT = Path(__file__).resolve().parents[2] / "workspaces"
 
 # Hard wall-clock ceiling on the clone subprocess.
 CLONE_TIMEOUT_SECONDS = 300

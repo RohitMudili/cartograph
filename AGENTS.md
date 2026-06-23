@@ -76,9 +76,12 @@ cartograph/
 │   │   ├── api/             HTTP routers: health.py, repos.py (index + questions)
 │   │   ├── db/              session.py, base.py, models.py, enums.py, health.py, migrations/
 │   │   ├── indexer/         cloner.py, pipeline.py, graph_builder.py, summarizer.py,
-│   │   │                    parser/{python.py,types.py}
-│   │   ├── agents/          llm.py (the provider-agnostic LLM wrapper). FLEET NOT BUILT YET.
-│   │   └── query/           retrieval.py, answerer.py, verifier.py
+│   │   │                    parser/{python.py,markdown.py,types.py}
+│   │   ├── agents/          llm.py (provider-agnostic LLM wrapper) + the enrichment
+│   │   │                    FLEET: graph_def.py (supervisor), planner/explorer/
+│   │   │                    synthesizer/critic/librarian, tools.py, schemas.py, events.py
+│   │   ├── query/           retrieval.py, answerer.py, verifier.py
+│   │   └── api/             health.py, repos.py, events.py (agent-event replay + WS)
 │   └── tests/          unit/ (no DB) + integration/ (db/network markers)
 │
 └── frontend/          ← Next.js 16, React 19, Tailwind v4, TypeScript
@@ -260,20 +263,25 @@ the verifier checks a claimed `file:line` snippet against the real chunk text.
 ## 9. What to build next (pointers)
 
 `STATUS.md` has the itemized list. The big remaining pieces, in rough order:
-1. ✅ **Google sign-in, backend half** — **COMPLETE.** Supabase JWT validation via
-   PyJWT/JWKS, `owner_user_id` on repos/questions, per-user RLS (migration 0006).
-   Frontend sign-in already wired; sign-in now persists per-user ownership.
-   (`PLAN.md §9B`, `backend/app/auth/jwt.py`.)
-2. **Answer quality** — index markdown/README (the model never sees the README today);
-   question-type-aware prompting. Small, high-leverage. (`PLAN.md §2.3`.)
-3. **Multi-agent LangGraph fleet** — the whole `PLAN.md §2.2` topology (planner →
-   explorers → synthesizer → critic → librarian). 0% built; `langgraph` installed,
-   `llm.py` ready. The biggest chunk.
-4. **Backend production shape** — query router (local/global/escalate), Leiden
-   communities, WebSocket event stream, background worker, TypeScript extractor.
-5. **Frontend** — Mission Control + Atlas (the big visual views), code panel. The
-   landing page is built; reuse its R3F graph engine for the Mission Control graph.
-   "My repos" / history UI now unblocked (owner_user_id populated).
+Done since: ✅ Google sign-in backend (JWT/JWKS + `owner_user_id` + RLS 0006);
+✅ answer quality (markdown indexing + question-type prompting); ✅ the **multi-agent
+enrichment fleet** (`backend/app/agents/`, `PLAN.md §2.2`) with the agent-event
+stream + replay/WS API (`api/events.py`). Remaining, in rough order:
+
+1. **Mission Control UI** (`/r/[repo]/run`) — the product's headline. Consume the
+   WS event stream (`WS /api/repos/{id}/runs/{run_id}/events/ws`): agent roster,
+   territory map, findings/verdict feed, cost ticker, replay scrubber. Frontend is
+   "replay-first" — build against recorded `agent_events` (`?after_seq=`).
+   (`FRONTEND.md §5.2`.) The landing R3F graph engine seeds the live graph.
+2. **Atlas UI** (`/r/[repo]/atlas`) — the graph + the librarian's `Node.annotations`
+   (verified findings) in an inspector. (`FRONTEND.md §5.3`.)
+3. **Answer layer reads enrichment** — the librarian writes `Node.annotations`;
+   the answerer doesn't read them yet. Feeding verified findings + the RepoModel
+   into retrieval/synthesis is high-leverage and small.
+4. **Query router** (local/global/escalate) — every question forces `local` today;
+   the escalation route can reuse the fleet's explorer + tools. (`PLAN.md §2.3`.)
+5. **Backend production shape** — Leiden communities, background worker/queue
+   (indexing+enrichment run inline today), TypeScript extractor.
 6. **Eval harness, GitHub OAuth (private repos), deploy + demo + writeup.**
 
 > **The agent fleet → WebSocket event stream → Mission Control UI are ONE connected

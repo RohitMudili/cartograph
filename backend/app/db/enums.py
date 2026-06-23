@@ -35,8 +35,33 @@ class RepoStatus(StrEnum):
     CLONING = "cloning"
     PARSING = "parsing"
     SUMMARIZING = "summarizing"
+    ENRICHING = "enriching"  # agent fleet is exploring/annotating the graph
     INDEXED = "indexed"
     FAILED = "failed"
+
+
+class AgentRole(StrEnum):
+    """Who is acting in the enrichment fleet (PLAN.md §2.2)."""
+
+    PLANNER = "planner"
+    EXPLORER = "explorer"
+    SYNTHESIZER = "synthesizer"
+    CRITIC = "critic"
+    LIBRARIAN = "librarian"
+    SUPERVISOR = "supervisor"  # the graph itself: phase transitions, run lifecycle
+
+
+class AgentEventType(StrEnum):
+    """The kind of thing an agent event records — the Mission Control stream
+    vocabulary and the replay/debug log (PLAN.md §3, §4.3)."""
+
+    SPAWN = "spawn"  # an agent (or N explorers) started
+    TOOL_CALL = "tool_call"  # an explorer used a tool (read_file, search_graph, …)
+    FINDING = "finding"  # an explorer emitted a structured claim
+    VERDICT = "verdict"  # the critic accepted/rejected a finding
+    PHASE = "phase"  # supervisor phase transition (planning → exploring → …)
+    ERROR = "error"  # an agent failed / was cancelled / budget hit
+    DONE = "done"  # an agent (or the run) finished
 
 
 class RunKind(StrEnum):

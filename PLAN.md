@@ -155,6 +155,14 @@ mechanical, not inferred.
 
 #### Step 2: Multi-agent enrichment (the showpiece)
 
+> **Status (2026-06-24): ✅ BUILT** in `backend/app/agents/` (planner → parallel
+> explorers → synthesizer → critic → librarian, with an `agent_events` stream +
+> replay/WS API, run during indexing as the `ENRICHING` phase; backend tested).
+> Implemented as a direct async supervisor rather than a LangGraph `StateGraph`
+> object — same supervisor pattern, transparent and unit-testable, no checkpointer
+> coupling to our session. The Mission Control UI that renders the stream is the
+> next piece (`FRONTEND.md §5.2`). The design below is the authoritative spec.
+
 Implemented as a **LangGraph** graph (recognizable framework; its supervisor pattern
 maps exactly to our topology). All agents call Gemini through a thin internal
 `llm.py` wrapper (see §5.3) so model choice, retries, token accounting, and cost
@@ -815,9 +823,11 @@ demo, which stays anonymous-friendly.
 
 Each week ends in something demoable. Cut scope, never quality of what ships.
 
-> **Progress (2026-06-15, ✅ done · ⚠️ partial · ❌ not built):** Week 1 essentially
-> DONE and proven on live data; the Chat UI from Week 3 is also built early. Week 2
-> (agent fleet + GraphRAG) is 0%. Overall v1 ≈ 45-50%. Live working log: `STATUS.md`.
+> **Progress (2026-06-24, ✅ done · ⚠️ partial · ❌ not built):** Week 1 DONE and
+> proven on live data; the Chat UI (Week 3) + landing/auth built early; Week 2's
+> agent fleet is ✅ built (supervisor topology + event stream, minus Leiden
+> communities and the query router). Overall v1 ≈ 70%. The big remaining piece is
+> the Mission Control / Atlas frontend that renders the fleet. Live log: `STATUS.md`.
 
 ### Week 1 — The spine (static graph + local Q&A) — ✅ DONE
 - ✅ Repo scaffolding, docker-compose, CI skeleton.
@@ -827,11 +837,12 @@ Each week ends in something demoable. Cut scope, never quality of what ships.
 - ✅ REST demo + first real cost (LangSmith). Now running on Supabase.
 - ✅ **Milestone hit:** asked pybktree real questions → correct, verified citations.
 
-### Week 2 — The fleet (multi-agent enrichment + GraphRAG) — ❌ NOT STARTED
-- ❌ LangGraph topology: planner → parallel explorers → synthesizer → critic → librarian.
-- ❌ Agent tools, structured findings, write-back, run budgets, event log.
+### Week 2 — The fleet (multi-agent enrichment + GraphRAG) — ⚠️ MOSTLY DONE
+- ✅ Supervisor topology: planner → parallel explorers → synthesizer → critic → librarian.
+- ✅ Agent tools, structured findings, write-back (Node.annotations), run budgets,
+  event log + replay/WS API. Tested (`tests/integration/test_fleet.py`).
 - ❌ Leiden communities + hierarchical summaries; global route; router; escalation
-  route with write-back.
+  route with write-back. (The escalation route can reuse the fleet's explorer.)
 - ❌ TypeScript grammar support.
 - ❌ **Milestone:** full index run with event log; global question from community summaries.
 
@@ -859,7 +870,9 @@ Each week ends in something demoable. Cut scope, never quality of what ships.
   worker+queue, WebSocket event stream, graph/walkthrough APIs, OAuth, incremental re-index.
 - **Frontend:** Mission Control, Atlas, code panel, app shell + drawer, event store,
   "my repos"/history. (✅ landing page, ✅ 3D hero, ✅ Google sign-in frontend, ✅ Chat.)
-- **Agent fleet:** the entire §2.2 topology (0% — foundation only).
+- **Agent fleet:** ✅ §2.2 topology built (planner→explorers→synthesizer→critic→
+  librarian + event stream). Remaining around it: Leiden communities, the query
+  router/global/escalate routes, and the Mission Control UI that renders the stream.
 - **Cross-cutting:** eval harness, deploy/demo/writeup.
 
 ### Explicit cut-line (if behind schedule)

@@ -259,12 +259,50 @@ app/auth/signout/route.ts           — POST-only signOut() → home
 
 ---
 
+## Flow 5: Agent enrichment fleet (during indexing)
+
+Runs after the summarizer, while the repo is in the `ENRICHING` state, before
+`INDEXED` (`pipeline.py` → `_run_enrichment` → `agents/graph_def.run_enrichment_fleet`).
+Best-effort: a failure never fails the index.
+
+```
+agents/graph_def.py  run_enrichment_fleet(session, repo_id, run_id, event_session)
+  └─ supervisor phases, each emitting events (EventEmitter → agent_events → live hub):
+       planning   → agents/planner.py    plan()        — skeleton → ExplorationPlan (reasoning)
+       exploring  → agents/explorer.py   explore_subsystem()  — N in PARALLEL (fast),
+       │             each with its OWN session + RepoTools; bounded tool-use loop
+       │             over agents/tools.py (read_file/get_node/get_neighbors/
+       │             search_graph/grep) → list[Finding]
+       synthesis  → agents/synthesizer.py synthesize()  — findings → RepoModel (reasoning)
+       critique   → agents/critic.py     critique()     — re-reads cited code,
+       │             accepts/rejects each Finding; missing-target = auto-reject.
+       │             One re-judge round for rejects.
+       writing    → agents/librarian.py  persist()      — accepted findings →
+                     Node.annotations (attributed); RepoModel → REPO node. No LLM.
+```
+
+**Key files & what to know:**
+- `agents/schemas.py` — every inter-agent payload is a validated Pydantic model;
+  agents return them via `llm.complete_structured` (JSON mode). No free-text parsing.
+- `agents/tools.py` — read-only, repo-scoped, served from Postgres (`chunks` hold
+  source, so no re-clone). A per-instance call counter enforces per-explorer budgets.
+- `agents/events.py` — `EventEmitter` assigns a per-run monotonic `seq`, persists to
+  `agent_events` (on a dedicated session so it never disturbs the work txn), and
+  publishes to an in-process `hub` for live WS subscribers. `load_events` replays.
+- `api/events.py` — `GET .../runs/{run_id}/events?after_seq=` (replay) +
+  `WS .../runs/{run_id}/events/ws` (backfill then live).
+- **Budgets:** `max_run_cost_usd` checked between phases, a 15-min run timeout,
+  per-explorer tool/step caps. **Concurrency:** `max_agent_concurrency` semaphore.
+- Tested in `tests/integration/test_fleet.py` with a deterministic fake LLM.
+
+---
+
 ## Where the spec lives for things not yet built
 
-- **Agent fleet** (planner/explorers/synthesizer/critic) → `PLAN.md §2.2`. Goes in
-  `backend/app/agents/`. `langgraph` is installed; `llm.py` is ready for it.
 - **Query router / global / escalate routes** → `PLAN.md §2.3`. Goes in `query/`.
-- **Mission Control / Atlas UI** → `FRONTEND.md §5.2/5.3`, `DESIGN.md`.
-- **WebSocket event stream** (the backbone the fleet + Mission Control need) →
-  `PLAN.md §4.3`. Not built; nothing streams yet.
+  (The escalation route can reuse the fleet's explorer + tools.)
+- **Mission Control UI** (consumes the WS event stream above) → `FRONTEND.md §5.2`.
+- **Atlas UI** (renders the graph + the librarian's annotations) → `FRONTEND.md §5.3`.
+- **Feeding enriched annotations into the answer layer** — the librarian writes
+  `Node.annotations`; the answerer doesn't read them yet.
 - **Eval harness** → `PLAN.md §6`. Goes in `evals/`.

@@ -230,6 +230,42 @@ class IndexRun(Base):
     __table_args__ = (Index("ix_index_runs_repo", "repo_id"),)
 
 
+class AgentEvent(Base):
+    """One event in an enrichment run — the Mission Control stream + replay log.
+
+    Append-only. Each agent (planner / explorer_N / synthesizer / critic /
+    librarian / supervisor) publishes events as it works: spawn, tool_call,
+    finding, verdict, phase transition, error, done. `seq` is a per-run monotonic
+    counter so a reconnecting WebSocket client can ask for "everything after
+    seq N" and never miss or duplicate an event (PLAN.md §4.3, §6 state layer).
+
+    `agent` and `type` are stored as plain strings (values of AgentRole /
+    AgentEventType) rather than PG enums — this is a fast-growing log vocabulary,
+    and append-only rows don't need enum-level integrity. `payload` carries the
+    type-specific body (the finding text, the tool args, the verdict reason, …).
+    """
+
+    __tablename__ = "agent_events"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    run_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("index_runs.id", ondelete="CASCADE"), nullable=False
+    )
+    # Per-run monotonic sequence (1, 2, 3, …) for gap-free reconnect/replay.
+    seq: Mapped[int] = mapped_column(Integer, nullable=False)
+    ts: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    agent: Mapped[str] = mapped_column(String(32), nullable=False)  # AgentRole value
+    type: Mapped[str] = mapped_column(String(32), nullable=False)  # AgentEventType value
+    payload: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("run_id", "seq", name="uq_agent_events_run_seq"),
+        Index("ix_agent_events_run_seq", "run_id", "seq"),
+    )
+
+
 class Question(Base, TimestampMixin):
     """A user question asked about a repo (PLAN.md §3)."""
 

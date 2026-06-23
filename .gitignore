@@ -17,8 +17,9 @@ build/
 *.key
 
 # Cartograph runtime
-# cloned repos (sandboxed clone target)
+# cloned repos (sandboxed clone target — anchored under backend/ by the cloner)
 /workspaces/
+backend/workspaces/
 # local volumes, exports
 /data/
 # dev server logs (backend-server.log, frontend-server.log)
