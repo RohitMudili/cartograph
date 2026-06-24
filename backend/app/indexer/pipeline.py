@@ -30,7 +30,7 @@ from app.agents.llm import UsageLedger
 from app.config import get_settings
 from app.db.enums import AgentEventType, AgentRole, RepoStatus, RunStatus
 from app.db.models import IndexRun, Repo
-from app.indexer.cloner import CloneError, cleanup_workspace, clone_repo
+from app.indexer.cloner import CloneError, _validate_url, cleanup_workspace, clone_repo
 from app.indexer.graph_builder import BuildStats, GraphBuilder
 from app.indexer.parser.markdown import extract_markdown
 from app.indexer.parser.python import extract_python
@@ -379,7 +379,14 @@ async def start_index(
 
     If the repo is already INDEXED, returns its existing run without re-running
     (idempotent) — the UI sends the user straight to chat.
+
+    Raises CloneError synchronously for an invalid scheme / disallowed host, so a
+    bad URL fails fast at the API boundary (400) rather than spinning up a doomed
+    background run. (The actual clone — auth failures, missing repos — still
+    happens in the background and surfaces on the run.)
     """
+    _validate_url(url, get_settings())
+
     repo = await _get_or_create_repo(session, url)
     if owner_user_id is not None:
         repo.owner_user_id = owner_user_id

@@ -27,6 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.jwt import AuthUser, get_optional_user
 from app.db.models import IndexRun, Question, Repo
 from app.db.session import get_session
+from app.indexer.cloner import CloneError, PrivateRepoError
 from app.indexer.pipeline import start_index
 from app.query.answerer import Answerer
 from app.session.store import add_message, format_context
@@ -198,12 +199,18 @@ async def create_index(
 
     The full pipeline (clone → parse → summarize → agent fleet) runs detached and
     streams progress as agent_events; the client opens `/r/{repo_id}/run` to watch
-    it live. Clone/access errors (private repo, bad URL) are recorded on the run
-    and surface via the event stream + repo status, not as a synchronous error —
-    the live map shows them.
+    it live. An invalid scheme / disallowed host is rejected synchronously (400);
+    deeper clone/access errors (private repo, missing repo) happen in the background
+    and surface via the run's event stream + status — the live map shows them.
     """
     owner = uuid.UUID(user.id) if user is not None else None
-    result = await start_index(session, body.url, branch=body.branch, owner_user_id=owner)
+    try:
+        result = await start_index(session, body.url, branch=body.branch, owner_user_id=owner)
+    except PrivateRepoError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except CloneError as exc:
+        # Bad scheme / disallowed host, caught before kickoff.
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return IndexResponse(
         repo_id=result.repo_id,
         run_id=result.run_id,
