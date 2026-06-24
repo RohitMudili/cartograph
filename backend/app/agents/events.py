@@ -83,6 +83,10 @@ class EventEmitter:
         self._seq = 0
         self._lock = asyncio.Lock()
 
+    async def aclose(self) -> None:
+        """Release the dedicated event session (call when the run ends)."""
+        await self._session.close()
+
     async def emit(
         self,
         agent: AgentRole,

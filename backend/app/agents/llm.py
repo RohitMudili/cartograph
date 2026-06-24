@@ -36,7 +36,7 @@ from tenacity import (
     retry,
     retry_if_exception_type,
     stop_after_attempt,
-    wait_exponential,
+    wait_random_exponential,
 )
 
 from app.config import (
@@ -229,8 +229,49 @@ def _embeddings(model: str) -> Embeddings:
 
 
 # Transient errors worth retrying. We keep this broad-but-bounded: any exception
-# except validation/value errors gets a few backoff attempts.
+# except validation/value errors gets backoff attempts.
 _RETRYABLE = (Exception,)
+
+# Provider overload / rate-limit signals. Gemini in particular returns 503
+# UNAVAILABLE ("model experiencing high demand") and 429 RESOURCE_EXHAUSTED during
+# capacity spikes; these are temporary and worth waiting out longer than a generic
+# error. We detect them by substring (the SDK surfaces them in the message).
+_TRANSIENT_MARKERS = (
+    "503",
+    "UNAVAILABLE",
+    "429",
+    "RESOURCE_EXHAUSTED",
+    "high demand",
+    "overloaded",
+    "try again later",
+)
+
+
+def _is_transient(exc: BaseException) -> bool:
+    return any(m.lower() in str(exc).lower() for m in _TRANSIENT_MARKERS)
+
+
+def _log_retry(state) -> None:  # type: ignore[no-untyped-def]
+    exc = state.outcome.exception() if state.outcome else None
+    if exc is not None:
+        log.warning(
+            "llm.retry",
+            attempt=state.attempt_number,
+            transient=_is_transient(exc),
+            error=str(exc)[:160],
+        )
+
+
+# One shared retry policy for all model calls. ~10 attempts with exponential
+# backoff + jitter ≈ up to several minutes of waiting, which rides out the typical
+# Gemini overload/quota spike instead of failing the whole run on the first 503.
+_RETRY = retry(
+    retry=retry_if_exception_type(_RETRYABLE),
+    stop=stop_after_attempt(10),
+    wait=wait_random_exponential(multiplier=2, min=2, max=90),
+    before_sleep=_log_retry,
+    reraise=True,
+)
 
 
 class LLM:
@@ -247,12 +288,7 @@ class LLM:
             # usd left None — filled later from LangSmith's run.total_cost.
             self.ledger.record(CallCost(self.model, in_tok, out_tok))
 
-    @retry(
-        retry=retry_if_exception_type(_RETRYABLE),
-        stop=stop_after_attempt(6),
-        wait=wait_exponential(multiplier=2, min=2, max=60),
-        reraise=True,
-    )
+    @_RETRY
     async def complete(self, prompt: str, *, system: str | None = None) -> str:
         """Plain text completion. Returns the response text."""
         await _rate_limiter.acquire(get_settings().llm_rpm)
@@ -265,12 +301,7 @@ class LLM:
         self._account(result)
         return result.text() if callable(getattr(result, "text", None)) else str(result.content)
 
-    @retry(
-        retry=retry_if_exception_type(_RETRYABLE),
-        stop=stop_after_attempt(6),
-        wait=wait_exponential(multiplier=2, min=2, max=60),
-        reraise=True,
-    )
+    @_RETRY
     async def complete_structured(
         self, prompt: str, schema: type[T], *, system: str | None = None
     ) -> T:

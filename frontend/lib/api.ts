@@ -50,11 +50,9 @@ export interface Repo {
 export interface IndexResult {
   repo_id: string;
   run_id: string;
-  head_commit: string;
-  nodes: number;
-  edges: number;
-  chunks: number;
-  files: number;
+  status: string;
+  // True if the repo was already fully indexed — skip the live map, go to chat.
+  already_indexed: boolean;
 }
 
 export interface Citation {

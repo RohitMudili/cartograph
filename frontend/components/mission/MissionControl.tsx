@@ -23,6 +23,8 @@ import { useRunEvents } from "@/lib/useRunEvents";
 
 import { AgentRoster } from "./AgentRoster";
 import { FindingsFeed } from "./FindingsFeed";
+import { FinishPanel } from "./FinishPanel";
+import { PhaseIntro } from "./PhaseIntro";
 import { ReplayScrubber } from "./ReplayScrubber";
 import { RunFooter } from "./RunFooter";
 
@@ -50,11 +52,22 @@ export function MissionControl({ repoId }: { repoId: string }) {
   }, [repoId]);
 
   const runId = repo?.latest_run_id ?? null;
-  // A run that's still indexing → watch live; a finished one → replay it.
+  // A run still indexing → watch live; a finished one → replay it.
   const initialMode = repo && ACTIVE_STATUSES.has(repo.status) ? "live" : "replay";
   const handle = useRunEvents(repo ? repoId : null, runId, initialMode);
   const state = useMemo(() => reduceRun(handle.events), [handle.events]);
   const touched = useMemo(() => [...state.touched], [state.touched]);
+
+  // Re-trigger indexing (e.g. after the agent pass was throttled). Sends them back
+  // to a fresh live run.
+  async function retryEnrichment() {
+    try {
+      const r = await api.indexRepo(repo!.url);
+      window.location.href = r.already_indexed ? `/r/${r.repo_id}/chat` : `/r/${r.repo_id}/run`;
+    } catch {
+      /* surfaced by the run itself */
+    }
+  }
 
   if (error) {
     return <CenterNote title="Mission Control">{error}</CenterNote>;
@@ -65,25 +78,34 @@ export function MissionControl({ repoId }: { repoId: string }) {
   if (!runId) {
     return (
       <CenterNote title="Mission Control">
-        This repo has no enrichment run yet. Index it (with an LLM key configured) to
-        watch the agent fleet map it.
+        This repo has no run yet. Index it from the home page to watch the agent
+        fleet map it.
       </CenterNote>
     );
   }
 
+  // Before the fleet appears (cloning/parsing/summarizing, no agents yet), show a
+  // calm phase intro instead of an empty roster/graph.
+  const preFleet = state.agents.length === 0 && !state.finished;
+
   return (
     <main className="flex h-[100dvh] flex-col bg-bg text-ink">
       <Header repoId={repoId} url={repo.url} />
-      <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[clamp(220px,20vw,300px)_1fr_clamp(300px,28vw,420px)]">
+      <div className="relative grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[clamp(220px,20vw,300px)_1fr_clamp(300px,28vw,420px)]">
         <aside className="hidden min-h-0 border-r border-border lg:block">
           <AgentRoster agents={state.agents} />
         </aside>
         <section className="relative min-h-0 border-border max-lg:border-b">
           <TerritoryGraph touched={touched} verified={state.verified} />
+          {preFleet && <PhaseIntro phase={state.phase} />}
         </section>
         <aside className="min-h-0 border-l border-border">
           <FindingsFeed feed={state.feed} />
         </aside>
+
+        {state.terminal && (
+          <FinishPanel repoId={repoId} state={state} onRetry={retryEnrichment} />
+        )}
       </div>
       <ReplayScrubber handle={handle} />
       <RunFooter state={state} />

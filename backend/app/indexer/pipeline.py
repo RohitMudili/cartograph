@@ -15,6 +15,7 @@ Flow:
 
 from __future__ import annotations
 
+import asyncio
 import datetime as dt
 import uuid
 from dataclasses import asdict, dataclass
@@ -24,9 +25,10 @@ import structlog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.agents.events import EventEmitter
 from app.agents.llm import UsageLedger
 from app.config import get_settings
-from app.db.enums import RepoStatus, RunStatus
+from app.db.enums import AgentEventType, AgentRole, RepoStatus, RunStatus
 from app.db.models import IndexRun, Repo
 from app.indexer.cloner import CloneError, cleanup_workspace, clone_repo
 from app.indexer.graph_builder import BuildStats, GraphBuilder
@@ -108,17 +110,35 @@ async def _get_or_create_repo(session: AsyncSession, url: str) -> Repo:
     return repo
 
 
+async def _make_emitter(run_id: uuid.UUID) -> EventEmitter:
+    """An EventEmitter on its own dedicated session, for the whole run's phase +
+    agent events (so `seq` stays monotonic across the entire pipeline)."""
+    from app.db.session import get_sessionmaker
+
+    event_session = get_sessionmaker()()
+    return EventEmitter(run_id, event_session)
+
+
 async def _run_enrichment(
-    session: AsyncSession, repo_id: uuid.UUID, run_id: uuid.UUID, ledger: UsageLedger
+    session: AsyncSession,
+    repo_id: uuid.UUID,
+    run_id: uuid.UUID,
+    ledger: UsageLedger,
+    emitter: EventEmitter | None,
 ):
     """Run the agent fleet over the summarized graph. Best-effort: any failure is
     swallowed (the fleet itself also catches internally) so a bad enrichment never
-    fails an otherwise-good index. Events are persisted on a dedicated session so
-    their commits don't touch the main indexing transaction."""
+    fails an otherwise-good index. Reuses the run's `emitter` so all events share
+    one monotonic seq; if none was supplied (no event stream), the fleet makes its
+    own throwaway emitter."""
     from app.agents.graph_def import run_enrichment_fleet
     from app.db.session import get_sessionmaker
 
     try:
+        if emitter is not None:
+            return await run_enrichment_fleet(
+                session, repo_id, run_id=run_id, emitter=emitter, ledger=ledger
+            )
         async with get_sessionmaker()() as event_session:
             return await run_enrichment_fleet(
                 session, repo_id, run_id=run_id, event_session=event_session, ledger=ledger
@@ -142,13 +162,24 @@ async def build_graph_from_workspace(
     return await GraphBuilder(session, repo_id).build(extracts)
 
 
-async def index_repo(session: AsyncSession, url: str, *, branch: str | None = None) -> IndexResult:
+async def index_repo(
+    session: AsyncSession,
+    url: str,
+    *,
+    branch: str | None = None,
+    emit_events: bool = False,
+) -> IndexResult:
     """Run the full static index for `url`. Commits on success; the caller's
     session transaction wraps the whole operation.
 
     Idempotent: if the repo is already indexed, returns its existing result
     without re-cloning or re-building (re-indexing is an explicit reindex action,
     not the default — so the UI can send a user straight to chat).
+
+    `emit_events=True` publishes supervisor `phase` events (cloning/parsing/
+    summarizing/enriching) and a terminal done/error to the run's agent_events
+    stream, so the live Mission Control page can show the whole pipeline, not just
+    the fleet. Used by the background-kickoff path.
     """
     repo = await _get_or_create_repo(session, url)
 
@@ -172,13 +203,33 @@ async def index_repo(session: AsyncSession, url: str, *, branch: str | None = No
             ),
         )
 
-    run = IndexRun(repo_id=repo.id, status=RunStatus.RUNNING)
-    session.add(run)
+    # Reuse a RUNNING run if the kickoff (start_index) already created one for this
+    # repo — so the run_id the client is already streaming matches. Otherwise make
+    # one (the direct/synchronous path).
+    run = await session.scalar(
+        select(IndexRun)
+        .where(IndexRun.repo_id == repo.id, IndexRun.status == RunStatus.RUNNING)
+        .order_by(IndexRun.started_at.desc())
+        .limit(1)
+    )
+    if run is None:
+        run = IndexRun(repo_id=repo.id, status=RunStatus.RUNNING)
+        session.add(run)
     repo.status = RepoStatus.CLONING
-    await session.flush()
+    # Commit the repo + run rows up front so the run_id exists durably: the live
+    # Mission Control page resolves it immediately and the phase events below
+    # (emitted on a separate session) can FK to index_runs.id.
+    await session.commit()
+
+    emitter = await _make_emitter(run.id) if emit_events else None
+
+    async def phase(name: str, **extra: object) -> None:
+        if emitter is not None:
+            await emitter.emit(AgentRole.SUPERVISOR, AgentEventType.PHASE, {"phase": name, **extra})
 
     workspace: Path | None = None
     try:
+        await phase("cloning")
         clone = await clone_repo(url, workspace_id=str(repo.id), branch=branch)
         workspace = clone.workspace
         repo.head_commit = clone.head_commit
@@ -186,7 +237,9 @@ async def index_repo(session: AsyncSession, url: str, *, branch: str | None = No
         repo.status = RepoStatus.PARSING
         await session.flush()
 
+        await phase("parsing")
         stats = await build_graph_from_workspace(session, repo.id, workspace)
+        await phase("parsing", nodes=stats.nodes, edges=stats.edges)
 
         # Semantic layer (summaries + embeddings). Skipped cleanly when no LLM key
         # is configured — the static graph above is fully usable on its own;
@@ -197,6 +250,7 @@ async def index_repo(session: AsyncSession, url: str, *, branch: str | None = No
         if get_settings().llm_available:
             repo.status = RepoStatus.SUMMARIZING
             await session.flush()
+            await phase("summarizing")
             summary_stats = await Summarizer(session, repo.id, ledger=ledger).run()
 
             # Agent-fleet enrichment (PLAN.md §2.2) — explorers map the now-summarized
@@ -210,7 +264,7 @@ async def index_repo(session: AsyncSession, url: str, *, branch: str | None = No
             # index durable before the best-effort fleet runs.
             repo.status = RepoStatus.ENRICHING
             await session.commit()
-            fleet_result = await _run_enrichment(session, repo.id, run.id, ledger)
+            fleet_result = await _run_enrichment(session, repo.id, run.id, ledger, emitter)
         else:
             log.info("index.summaries_skipped", repo_id=str(repo.id), reason="no_llm_key")
 
@@ -240,6 +294,25 @@ async def index_repo(session: AsyncSession, url: str, *, branch: str | None = No
         run.finished_at = dt.datetime.now(dt.UTC)
         await session.flush()
 
+        # Terminal event for the live page: the map is ready. `enriched` tells the
+        # UI whether the agent pass actually produced findings or was skipped/
+        # throttled (graceful-finish either way).
+        if emitter is not None:
+            await emitter.emit(
+                AgentRole.SUPERVISOR,
+                AgentEventType.DONE,
+                {
+                    "terminal": True,
+                    "enriched": bool(fleet_result and fleet_result.annotations_written > 0),
+                    "enrichment_error": (fleet_result.error if fleet_result else None),
+                    "nodes": stats.nodes,
+                    "edges": stats.edges,
+                    "findings": fleet_result.findings if fleet_result else 0,
+                    "accepted": fleet_result.accepted if fleet_result else 0,
+                    "annotations": fleet_result.annotations_written if fleet_result else 0,
+                },
+            )
+
         log.info("index.done", repo_id=str(repo.id), head=clone.head_commit, **asdict(stats))
         return IndexResult(
             repo_id=str(repo.id),
@@ -253,6 +326,10 @@ async def index_repo(session: AsyncSession, url: str, *, branch: str | None = No
         run.error = str(exc)
         run.finished_at = dt.datetime.now(dt.UTC)
         await session.flush()
+        if emitter is not None:
+            await emitter.emit(
+                AgentRole.SUPERVISOR, AgentEventType.ERROR, {"terminal": True, "error": str(exc)}
+            )
         log.warning("index.clone_failed", repo_id=str(repo.id), error=str(exc))
         raise
     except Exception as exc:
@@ -261,8 +338,88 @@ async def index_repo(session: AsyncSession, url: str, *, branch: str | None = No
         run.error = f"{type(exc).__name__}: {exc}"
         run.finished_at = dt.datetime.now(dt.UTC)
         await session.flush()
+        if emitter is not None:
+            await emitter.emit(
+                AgentRole.SUPERVISOR,
+                AgentEventType.ERROR,
+                {"terminal": True, "error": f"{type(exc).__name__}: {exc}"},
+            )
         log.error("index.failed", repo_id=str(repo.id), error=str(exc))
         raise
     finally:
         if workspace is not None:
             cleanup_workspace(workspace)
+        if emitter is not None:
+            await emitter.aclose()  # release the dedicated event session
+
+
+@dataclass(slots=True)
+class StartResult:
+    """What the kickoff returns immediately, before indexing runs."""
+
+    repo_id: str
+    run_id: str
+    status: str
+    already_indexed: bool
+
+
+async def start_index(
+    session: AsyncSession,
+    url: str,
+    *,
+    branch: str | None = None,
+    owner_user_id: uuid.UUID | None = None,
+) -> StartResult:
+    """Kick off indexing and return immediately so the UI can open the live map.
+
+    Creates (or finds) the repo + an IndexRun, commits them, then schedules the
+    full pipeline (clone → parse → summarize → fleet, with event emission) as a
+    detached background task. The client gets repo_id + run_id at once and follows
+    the run via the agent-event stream / repo status.
+
+    If the repo is already INDEXED, returns its existing run without re-running
+    (idempotent) — the UI sends the user straight to chat.
+    """
+    repo = await _get_or_create_repo(session, url)
+    if owner_user_id is not None:
+        repo.owner_user_id = owner_user_id
+
+    if repo.status == RepoStatus.INDEXED:
+        latest = await session.scalar(
+            select(IndexRun)
+            .where(IndexRun.repo_id == repo.id)
+            .order_by(IndexRun.started_at.desc())
+            .limit(1)
+        )
+        await session.commit()
+        return StartResult(
+            repo_id=str(repo.id),
+            run_id=str(latest.id) if latest else "",
+            status=repo.status.value,
+            already_indexed=True,
+        )
+
+    run = IndexRun(repo_id=repo.id, status=RunStatus.RUNNING)
+    session.add(run)
+    repo.status = RepoStatus.PENDING
+    await session.commit()  # durable repo_id + run_id before the bg task starts
+    repo_id, run_id = repo.id, run.id
+
+    async def _runner() -> None:
+        from app.db.session import get_sessionmaker
+
+        async with get_sessionmaker()() as bg_session:
+            try:
+                await index_repo(bg_session, url, branch=branch, emit_events=True)
+                if owner_user_id is not None:
+                    bg = await bg_session.get(Repo, repo_id)
+                    if bg is not None and bg.owner_user_id is None:
+                        bg.owner_user_id = owner_user_id
+                await bg_session.commit()
+            except Exception as exc:  # noqa: BLE001 — bg task; errors already recorded on the run
+                log.warning("index.background_failed", repo_id=str(repo_id), error=str(exc))
+
+    asyncio.create_task(_runner())  # noqa: RUF006 — detached background run
+    return StartResult(
+        repo_id=str(repo_id), run_id=str(run_id), status="pending", already_indexed=False
+    )

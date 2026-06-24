@@ -145,7 +145,12 @@ function Hero() {
     setBusy(true);
     try {
       const result = await api.indexRepo(url.trim());
-      router.push(`/r/${result.repo_id}/chat`);
+      // Already indexed → straight to chat. Otherwise watch the agents map it live.
+      router.push(
+        result.already_indexed
+          ? `/r/${result.repo_id}/chat`
+          : `/r/${result.repo_id}/run`,
+      );
     } catch (e) {
       if (e instanceof ApiError && e.status === 403) {
         setError("That repo is private. Sign in with GitHub for private repos (coming soon).");

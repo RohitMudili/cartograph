@@ -13,6 +13,9 @@ import type { AgentEvent, AgentRole } from "./events";
 export type AgentState = "idle" | "working" | "done" | "failed";
 export type RunPhase =
   | "starting"
+  | "cloning"
+  | "parsing"
+  | "summarizing"
   | "planning"
   | "exploring"
   | "synthesis"
@@ -20,6 +23,9 @@ export type RunPhase =
   | "writing"
   | "done"
   | "error";
+
+/** The pre-fleet pipeline phases, shown as an intro before the agents appear. */
+export const PIPELINE_PHASES: RunPhase[] = ["cloning", "parsing", "summarizing"];
 
 export interface AgentCard {
   /** Stable key: role, or `explorer:<subsystem>` for the parallel explorers. */
@@ -63,6 +69,14 @@ export interface RunState {
   /** True once the supervisor emits its terminal done/error. */
   finished: boolean;
   error: string | null;
+  /** Set on the terminal event — drives the finish panel. */
+  terminal: {
+    ok: boolean; // the index reached INDEXED (vs a hard clone/parse error)
+    enriched: boolean; // the agent fleet actually wrote findings
+    enrichmentError: string | null; // why the fleet was skipped/throttled, if any
+    nodes: number;
+    annotations: number;
+  } | null;
 }
 
 function str(v: unknown): string {
@@ -87,6 +101,7 @@ function emptyState(): RunState {
     },
     finished: false,
     error: null,
+    terminal: null,
   };
 }
 
@@ -109,6 +124,9 @@ function ensureCard(map: Map<string, AgentCard>, agent: string, payload: Record<
 }
 
 const PHASES: Record<string, RunPhase> = {
+  cloning: "cloning",
+  parsing: "parsing",
+  summarizing: "summarizing",
   planning: "planning",
   exploring: "exploring",
   synthesis: "synthesis",
@@ -191,12 +209,23 @@ export function reduceRun(events: AgentEvent[]): RunState {
       }
       case "done": {
         if (agent === "supervisor") {
-          s.finished = true;
-          s.phase = "done";
           s.totals.annotations = Number(p.annotations ?? s.totals.annotations) || s.totals.annotations;
           s.totals.inputTokens = Number(p.input_tokens ?? 0) || s.totals.inputTokens;
           s.totals.outputTokens = Number(p.output_tokens ?? 0) || s.totals.outputTokens;
           if (typeof p.usd === "number") s.totals.usd = p.usd;
+          // The pipeline's terminal event (terminal:true) finishes the run; the
+          // fleet's own internal "done" is not terminal (the index continues).
+          if (p.terminal === true) {
+            s.finished = true;
+            s.phase = "done";
+            s.terminal = {
+              ok: true,
+              enriched: p.enriched === true,
+              enrichmentError: p.enrichment_error ? str(p.enrichment_error) : null,
+              nodes: Number(p.nodes ?? 0) || 0,
+              annotations: Number(p.annotations ?? 0) || 0,
+            };
+          }
         } else {
           const card = ensureCard(cards, agent, p);
           card.state = "done";
@@ -208,10 +237,22 @@ export function reduceRun(events: AgentEvent[]): RunState {
         break;
       }
       case "error": {
-        if (agent === "supervisor") {
+        if (agent === "supervisor" && p.terminal === true) {
+          // Hard failure (clone/parse) — the index itself failed.
           s.finished = true;
           s.phase = "error";
-          s.error = str(p.error) || "run failed";
+          s.error = str(p.error) || "indexing failed";
+          s.terminal = {
+            ok: false,
+            enriched: false,
+            enrichmentError: str(p.error) || null,
+            nodes: 0,
+            annotations: 0,
+          };
+        } else if (agent === "supervisor") {
+          // Non-terminal: the agent fleet errored/throttled, but the index still
+          // completes on the static + summary layers. Record it for the finish panel.
+          s.error = s.error ?? (str(p.error) || "agent enrichment failed");
         } else {
           const card = ensureCard(cards, agent, p);
           card.state = "failed";

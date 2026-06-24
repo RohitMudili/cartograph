@@ -232,18 +232,23 @@ async def run_enrichment_fleet(
     repo_id: uuid.UUID,
     *,
     run_id: uuid.UUID,
-    event_session: AsyncSession,
+    event_session: AsyncSession | None = None,
+    emitter: EventEmitter | None = None,
     ledger: llm.UsageLedger | None = None,
 ) -> FleetResult:
     """Run the full enrichment fleet for a repo. Entry point for the pipeline.
 
     `session` is the agents' work session (graph reads + librarian writes).
-    `event_session` is a SEPARATE session dedicated to event persistence, so
-    emitting events (which commits) never interferes with the work transaction.
-    The caller commits `session` after this returns.
+    Provide EITHER `emitter` (the run's shared emitter, so all phase + agent
+    events share one monotonic seq — preferred) OR `event_session` (a separate
+    session this function wraps in its own emitter). The caller commits `session`
+    after this returns.
     """
     ledger = ledger or llm.UsageLedger()
-    emitter = EventEmitter(run_id, event_session)
+    if emitter is None:
+        if event_session is None:
+            raise ValueError("run_enrichment_fleet needs either emitter or event_session")
+        emitter = EventEmitter(run_id, event_session)
     await emitter.emit(AgentRole.SUPERVISOR, AgentEventType.SPAWN, {"repo_id": str(repo_id)})
 
     try:

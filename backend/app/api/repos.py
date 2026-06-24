@@ -27,8 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.jwt import AuthUser, get_optional_user
 from app.db.models import IndexRun, Question, Repo
 from app.db.session import get_session
-from app.indexer.cloner import CloneError, PrivateRepoError
-from app.indexer.pipeline import index_repo
+from app.indexer.pipeline import start_index
 from app.query.answerer import Answerer
 from app.session.store import add_message, format_context
 from app.session.store import create_session as create_session_in_redis
@@ -42,13 +41,17 @@ class IndexRequest(BaseModel):
 
 
 class IndexResponse(BaseModel):
+    """Returned immediately after kickoff — indexing runs in the background.
+
+    The client routes to the live map (`/r/{repo_id}/run`) and follows progress via
+    the agent-event stream + repo status. `already_indexed` lets the UI skip the
+    map and go straight to chat for a repo that's done.
+    """
+
     repo_id: str
     run_id: str
-    head_commit: str
-    nodes: int
-    edges: int
-    chunks: int
-    files: int
+    status: str
+    already_indexed: bool
 
 
 class RepoResponse(BaseModel):
@@ -185,36 +188,27 @@ async def list_questions(
     ]
 
 
-@router.post("", response_model=IndexResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=IndexResponse, status_code=status.HTTP_202_ACCEPTED)
 async def create_index(
     body: IndexRequest,
     session: Annotated[AsyncSession, Depends(get_session)],
     user: Annotated[AuthUser | None, Depends(get_optional_user)] = None,
 ) -> IndexResponse:
-    try:
-        result = await index_repo(session, body.url, branch=body.branch)
-        # Attribute the repo to the authenticated user if available.
-        if user is not None:
-            repo = await session.get(Repo, uuid.UUID(result.repo_id))
-            if repo is not None:
-                repo.owner_user_id = uuid.UUID(user.id)
-        await session.commit()
-    except PrivateRepoError as exc:
-        # Private/not-found anonymously → 403 with the connect-GitHub guidance
-        # (PLAN.md §9A). Distinct from a generic clone failure.
-        await session.commit()  # persist the FAILED run/repo state
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
-    except CloneError as exc:
-        await session.commit()  # persist the FAILED run/repo state
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    """Kick off indexing in the background and return immediately (202).
+
+    The full pipeline (clone → parse → summarize → agent fleet) runs detached and
+    streams progress as agent_events; the client opens `/r/{repo_id}/run` to watch
+    it live. Clone/access errors (private repo, bad URL) are recorded on the run
+    and surface via the event stream + repo status, not as a synchronous error —
+    the live map shows them.
+    """
+    owner = uuid.UUID(user.id) if user is not None else None
+    result = await start_index(session, body.url, branch=body.branch, owner_user_id=owner)
     return IndexResponse(
         repo_id=result.repo_id,
         run_id=result.run_id,
-        head_commit=result.head_commit,
-        nodes=result.stats.nodes,
-        edges=result.stats.edges,
-        chunks=result.stats.chunks,
-        files=result.stats.files,
+        status=result.status,
+        already_indexed=result.already_indexed,
     )
 
 

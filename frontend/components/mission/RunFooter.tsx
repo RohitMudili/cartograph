@@ -20,6 +20,9 @@ const PHASE_ORDER: RunPhase[] = [
 
 const PHASE_LABEL: Record<RunPhase, string> = {
   starting: "starting",
+  cloning: "cloning",
+  parsing: "parsing",
+  summarizing: "summarizing",
   planning: "planning",
   exploring: "exploring",
   synthesis: "synthesis",
