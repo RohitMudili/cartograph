@@ -3,9 +3,12 @@
 _Working log for picking up where we left off. Not the plan (see PLAN.md) — this
 is "where are we right now and what's next."_
 
-**Last updated:** 2026-06-24 (Mission Control UI built — live + replay agent-event
-stream rendering the fleet; DB is now Supabase-only for every environment; fixed
-the enrichment FK bug. Earlier today: the LangGraph agent fleet — planner → parallel
+**Last updated:** 2026-06-25 (paste → live-mapping flow: POST kicks off indexing in
+the background and returns instantly, the UI routes straight to the live map with a
+phase intro (cloning/parsing/summarizing) → agents → a graceful "Mapping finished" /
+"Map ready" panel + "Chat about your repo"; LLM retry rides out transient Gemini
+429/503. Earlier: Mission Control UI; DB is Supabase-only; enrichment FK fix; the
+LangGraph agent fleet — planner → parallel
 explorers → synthesizer → critic → librarian, with agent_events stream + replay/WS
 API; runs during indexing as the ENRICHING phase. Backend tested green.)
 
@@ -195,10 +198,12 @@ Auth / identity:
 - ❌ **GitHub OAuth for private repos** (task #15 — designed §9A, not built)
 
 Production shape:
-- ❌ **Background worker + job queue** (indexing runs inline in the request today)
+- ⚠️ **Background indexing** — `POST /api/repos` now kicks off the pipeline as a
+  detached in-process task (`start_index`) and returns 202 instantly with
+  repo_id/run_id, so the UI opens the live map immediately. A durable job
+  queue/worker (survives restarts, multi-process) is still future.
 - ✅ **WebSocket event stream** — `WS /api/repos/{id}/runs/{run_id}/events/ws`
-  (backfill + live) and a replay `GET …/events?after_seq=`. Backs the fleet; the
-  Mission Control UI that consumes it is the next frontend piece.
+  (backfill + live) and a replay `GET …/events?after_seq=`. Drives Mission Control.
 - ✅ **`agent_events` table + event bus** — migration 0010; `events.py` persists
   with per-run monotonic `seq` and fans out to an in-process hub.
 - ❌ **Graph-slice API** (`GET /repos/{id}/graph`) — what Atlas queries
@@ -213,13 +218,18 @@ Production shape:
 - ✅ **3D hero graph** (R3F) with 2D fallback + lazy-load. Engine reused by Mission Control.
 - ✅ **Google sign-in (frontend)** — optional Supabase auth in the nav.
 - ✅ **Index-a-repo flow** (now in the hero) · ✅ **Chat console** (working)
-- ✅ **Mission Control** (`/r/[repo]/run`) — **BUILT.** Resolves the repo's latest run,
-  streams its agent events, renders: agent roster (left), R3F **territory graph** that
-  lights up as explorers touch symbols (center), findings/verdict feed with visible
-  rejections (right), phase/cost telemetry footer, and a **replay scrubber**
-  (LIVE/REPLAY · play/pause · 1×/4×/16× · seek). `components/mission/` +
-  `lib/{events,runState,useRunEvents}.ts`. Replay-first: one reducer renders live and
-  replayed runs identically. Verified end-to-end via headless capture.
+- ✅ **Mission Control** (`/r/[repo]/run`) — **BUILT.** Pasting a repo on the landing
+  page routes straight here (already-indexed → chat instead). Resolves the repo's
+  latest run, streams its agent events, renders: a **phase intro** (cloning →
+  parsing → summarizing checklist) before the agents appear; agent roster (left),
+  R3F **territory graph** that lights up as explorers touch symbols (center),
+  findings/verdict feed with visible rejections (right), phase/cost telemetry
+  footer, and a **replay scrubber** (LIVE/REPLAY · play/pause · 1×/4×/16× · seek).
+  On terminal it shows a **finish panel**: "Mapping finished" when the fleet ran, or
+  a graceful "Map ready (agent pass skipped)" + Retry when throttled — always with a
+  **"Chat about your repo"** CTA. `components/mission/` (incl. PhaseIntro, FinishPanel)
+  + `lib/{events,runState,useRunEvents}.ts`. Replay-first: one reducer renders live
+  and replayed runs identically. Verified end-to-end via headless capture.
 - ❌ **Atlas** (`/r/[repo]/atlas`) — force-directed / semantic-zoom graph + inspector
 - ❌ **Code panel** — clicking a Chat citation chip should open source at the lines
 - ❌ **Walkthrough view**

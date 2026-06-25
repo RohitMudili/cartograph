@@ -160,8 +160,9 @@ mechanical, not inferred.
 > replay/WS API, run during indexing as the `ENRICHING` phase; backend tested).
 > Implemented as a direct async supervisor rather than a LangGraph `StateGraph`
 > object — same supervisor pattern, transparent and unit-testable, no checkpointer
-> coupling to our session. The Mission Control UI that renders the stream is the
-> next piece (`FRONTEND.md §5.2`). The design below is the authoritative spec.
+> coupling to our session. The Mission Control UI that renders the stream is also
+> built (`FRONTEND.md §5.2`) — paste → background index → live map → graceful
+> finish. The design below is the authoritative spec.
 
 Implemented as a **LangGraph** graph (recognizable framework; its supervisor pattern
 maps exactly to our topology). All agents call Gemini through a thin internal
@@ -867,13 +868,15 @@ Each week ends in something demoable. Cut scope, never quality of what ships.
 - ❌ **Milestone:** public URL + repo + writeup + video.
 
 ### Net remaining, by area (see STATUS.md for the itemized checklist)
-- **Backend:** router/global/escalate routes, communities, markdown+TS extractors,
-  worker+queue, WebSocket event stream, graph/walkthrough APIs, OAuth, incremental re-index.
-- **Frontend:** Mission Control, Atlas, code panel, app shell + drawer, event store,
-  "my repos"/history. (✅ landing page, ✅ 3D hero, ✅ Google sign-in frontend, ✅ Chat.)
+- **Backend:** router/global/escalate routes, communities, TypeScript extractor,
+  durable worker/queue (indexing now runs as an in-process background task),
+  graph/walkthrough APIs, GitHub OAuth, incremental re-index, answerer reading
+  enrichment annotations. (✅ markdown extractor, ✅ WebSocket event stream + replay.)
+- **Frontend:** Atlas, code panel, app shell + drawer. (✅ landing, ✅ 3D hero,
+  ✅ Google sign-in, ✅ Chat, ✅ Mission Control + event store, ✅ "my repos"/history.)
 - **Agent fleet:** ✅ §2.2 topology built (planner→explorers→synthesizer→critic→
-  librarian + event stream). Remaining around it: Leiden communities, the query
-  router/global/escalate routes, and the Mission Control UI that renders the stream.
+  librarian + event stream) and ✅ rendered live in Mission Control. Remaining around
+  it: Leiden communities and the query router/global/escalate routes.
 - **Cross-cutting:** eval harness, deploy/demo/writeup.
 
 ### Explicit cut-line (if behind schedule)

@@ -159,15 +159,22 @@ conditionally renders the link next to "Source". See `ARCHITECTURE.md` Flow 4 an
 > reducer turns events into the view model, so live and replayed runs render
 > identically. Verified end-to-end via headless capture.
 >
-> **As built:** `[roster | territory graph (R3F) | findings feed]` over a
-> **ReplayScrubber** (LIVE/REPLAY · play/pause · 1×/4×/16× · seek) and a
+> **As built:** Pasting a repo on the landing page routes straight here (the index
+> runs in the background; an already-indexed repo goes to chat instead). The view
+> opens with a **PhaseIntro** — a cloning → parsing → summarizing checklist — before
+> the agents spawn. Once they do: `[roster | territory graph (R3F) | findings feed]`
+> over a **ReplayScrubber** (LIVE/REPLAY · play/pause · 1×/4×/16× · seek) and a
 > **RunFooter** (phase pipeline + findings/verified/rejected/tokens/cost). Roster
 > cards show role glyph + state dot (pulsing amber=working, green ✓=done, red=failed)
 > + activity + tool/finding counts. Feed shows findings and critic verdicts with
 > **rejections struck-through and kept visible**. The territory graph is the hero's
 > R3F engine: nodes are the symbols the fleet touched, verified ones lock to amber.
-> Deferred vs the plan below: the treemap/icicle territory layout (we use the 3D
-> node field instead), the per-agent token sparkline, and Cancel.
+> On the run's terminal event a **FinishPanel** slides up: "Mapping finished" when
+> the fleet ran, or a graceful "Map ready (agent pass skipped)" + Retry when the
+> fleet was throttled (e.g. Gemini quota) — always with a **"Chat about your repo"**
+> CTA, so the page never hangs. Deferred vs the plan below: the treemap/icicle
+> territory layout (we use the 3D node field instead), the per-agent token
+> sparkline, and Cancel.
 
 The spectacle view; Committed color strategy (amber earns ~30% of the surface).
 Grid: `[roster 320px | territory map 1fr | findings 380px]` over a 64px footer.

@@ -11,9 +11,16 @@
 What happens when a user pastes a repo URL, in execution order:
 
 ```
-backend/app/api/repos.py          create_index()  — the HTTP entry
-  └─▶ indexer/pipeline.py         index_repo()     — orchestrates everything
-        ├─ _get_or_create_repo()  — idempotent: if already INDEXED, returns instantly
+backend/app/api/repos.py          create_index()  — HTTP entry, returns 202 INSTANTLY
+  └─▶ indexer/pipeline.py         start_index()    — kickoff (synchronous part)
+        ├─ _validate_url()        — scheme + host allowlist; bad URL → 400 here, fast
+        ├─ _get_or_create_repo()  — idempotent: if already INDEXED, returns its run now
+        ├─ creates repo + IndexRun, COMMITS, returns repo_id/run_id to the client
+        └─ asyncio.create_task(index_repo(emit_events=True))  — detached background run
+              │  the client has already opened /r/{repo_id}/run and is streaming events
+              ▼
+        indexer/pipeline.py       index_repo()     — orchestrates the full pipeline,
+        │                           emitting supervisor `phase` events at each step
         ├─ indexer/cloner.py      clone_repo()     — sandboxed git clone (security-hardened)
         ├─ build_graph_from_workspace():
         │    ├─ _iter_source_files()               — walk files, skip noise dirs,
@@ -30,8 +37,13 @@ backend/app/api/repos.py          create_index()  — the HTTP entry
 ```
 
 **Key files & what to know:**
-- `pipeline.py` — the conductor. Sets repo status (cloning→parsing→summarizing→indexed),
-  records an `IndexRun`, cleans the workspace in a `finally`.
+- `pipeline.py` — the conductor. `start_index()` is the fast kickoff (validate →
+  create+commit repo/run → schedule the background task → return). `index_repo()`
+  is the full pipeline: sets repo status (cloning→parsing→summarizing→enriching→
+  indexed), reuses the kickoff's RUNNING `IndexRun`, emits a supervisor `phase`
+  event per step plus a terminal done/error, cleans the workspace in a `finally`.
+  Enrichment is best-effort/non-fatal (a throttled fleet still leaves the repo
+  INDEXED on the static + summary layers — the graceful-finish path).
 - `cloner.py` — **security-critical.** Blocks `file://`, disables hooks, size caps,
   `GIT_TERMINAL_PROMPT=0` for fast-fail on private repos. Don't weaken it.
 - `parser/python.py` / `parser/markdown.py` — pure (no DB). `python.py` walks the
@@ -150,8 +162,10 @@ components/
   auth/AuthMenu.tsx     — nav sign-in button → account chip + sign-out
   mission/              — Mission Control (see "Flow 6" below)
     MissionControl.tsx  — resolves latest run, wires the event stream + layout
+    PhaseIntro.tsx      — cloning/parsing/summarizing checklist before agents appear
     AgentRoster.tsx · FindingsFeed.tsx · RunFooter.tsx · ReplayScrubber.tsx
     TerritoryGraph.tsx  — R3F graph that lights up as explorers touch symbols
+    FinishPanel.tsx     — terminal "Mapping finished" / graceful "Map ready" + Chat CTA
 app/r/[repo]/run/page.tsx — Mission Control route (awaits params)
 lib/api.ts              — typed client mirroring the backend response models
 lib/events.ts           — agent-event types + replay fetch + WS URL helper
@@ -312,7 +326,9 @@ agents/graph_def.py  run_enrichment_fleet(session, repo_id, run_id, event_sessio
 
 ## Flow 6: Mission Control (`/r/[repo]/run`) — watch the fleet
 
-The frontend that renders Flow 5's event stream, live or replayed.
+The frontend that renders Flow 5's event stream, live or replayed. Pasting a repo
+on the landing page routes straight here (`router.push('/r/{id}/run')`); an
+already-indexed repo goes to chat instead.
 
 ```
 app/r/[repo]/run/page.tsx        → <MissionControl repoId>
@@ -320,10 +336,14 @@ components/mission/MissionControl.tsx
   ├─ api.getRepo(repoId) → repo.latest_run_id   (resolve the run)
   ├─ useRunEvents(repoId, runId, mode)           (lib/useRunEvents.ts)
   │    replay: GET .../events?after_seq=0   then  live: WS .../events/ws
-  │    finished run → REPLAY (scrubber); in-progress → LIVE (WS)
+  │    in-progress → LIVE (WS); finished → REPLAY (scrubber)
   ├─ reduceRun(events) → RunState                (lib/runState.ts, PURE)
-  └─ layout: AgentRoster | TerritoryGraph (R3F) | FindingsFeed
-             + ReplayScrubber + RunFooter (phase/tokens/cost)
+  └─ layout:
+       PhaseIntro       — before any agent (phase = cloning/parsing/summarizing)
+       AgentRoster | TerritoryGraph (R3F) | FindingsFeed   — once agents spawn
+       FinishPanel      — when state.terminal: "Mapping finished" / graceful
+                          "Map ready" + Retry, always "Chat about your repo"
+       + ReplayScrubber + RunFooter (phase/tokens/cost)
 ```
 
 **Key files & what to know:**
@@ -338,6 +358,10 @@ components/mission/MissionControl.tsx
   (`ssr:false`) so Three.js stays off the initial bundle.
 - `FindingsFeed.tsx` — findings + critic verdicts; **rejected verdicts stay visible,
   struck-through** (the honesty rule). `RunFooter.tsx` — phase pipeline + cost ticker.
+- `PhaseIntro.tsx` — shown while `state.agents` is empty and the run isn't finished
+  (the pre-fleet cloning/parsing/summarizing phases). `FinishPanel.tsx` — shown on
+  `state.terminal`; `terminal.enriched` distinguishes a full agent run from a
+  graceful skip (Gemini throttled), but "Chat about your repo" appears either way.
 - Backend touchpoint: `RepoResponse.latest_run_id` (added to `api/repos.py`) is how
   the page finds the run to stream.
 

@@ -273,23 +273,22 @@ the verifier checks a claimed `file:line` snippet against the real chunk text.
 Done since: ✅ Google sign-in backend (JWT/JWKS + `owner_user_id` + RLS 0006);
 ✅ answer quality (markdown indexing + question-type prompting); ✅ the **multi-agent
 enrichment fleet** (`backend/app/agents/`, `PLAN.md §2.2`) with the agent-event
-stream + replay/WS API (`api/events.py`). Remaining, in rough order:
+stream + replay/WS API; ✅ **Mission Control** (`/r/[repo]/run`) — the live + replay
+view of the fleet, with the paste → background-index → live-map → graceful-finish
+flow (`components/mission/`, `lib/{events,runState,useRunEvents}.ts`). Remaining,
+in rough order:
 
-1. **Mission Control UI** (`/r/[repo]/run`) — the product's headline. Consume the
-   WS event stream (`WS /api/repos/{id}/runs/{run_id}/events/ws`): agent roster,
-   territory map, findings/verdict feed, cost ticker, replay scrubber. Frontend is
-   "replay-first" — build against recorded `agent_events` (`?after_seq=`).
-   (`FRONTEND.md §5.2`.) The landing R3F graph engine seeds the live graph.
-2. **Atlas UI** (`/r/[repo]/atlas`) — the graph + the librarian's `Node.annotations`
+1. **Atlas UI** (`/r/[repo]/atlas`) — the graph + the librarian's `Node.annotations`
    (verified findings) in an inspector. (`FRONTEND.md §5.3`.)
-3. **Answer layer reads enrichment** — the librarian writes `Node.annotations`;
+2. **Answer layer reads enrichment** — the librarian writes `Node.annotations`;
    the answerer doesn't read them yet. Feeding verified findings + the RepoModel
    into retrieval/synthesis is high-leverage and small.
-4. **Query router** (local/global/escalate) — every question forces `local` today;
+3. **Query router** (local/global/escalate) — every question forces `local` today;
    the escalation route can reuse the fleet's explorer + tools. (`PLAN.md §2.3`.)
-5. **Backend production shape** — Leiden communities, background worker/queue
-   (indexing+enrichment run inline today), TypeScript extractor.
-6. **Eval harness, GitHub OAuth (private repos), deploy + demo + writeup.**
+4. **Backend production shape** — Leiden communities; a **durable** job queue/worker
+   (indexing now runs as an in-process background task via `start_index`, but it
+   doesn't survive a restart / isn't multi-process); TypeScript extractor.
+5. **Eval harness, GitHub OAuth (private repos), deploy + demo + writeup.**
 
 > **The agent fleet → WebSocket event stream → Mission Control UI are ONE connected
 > feature** — none demos without the other two. The frontend is designed
