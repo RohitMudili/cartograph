@@ -31,6 +31,7 @@ from app.config import get_settings
 from app.db.enums import AgentEventType, AgentRole, RepoStatus, RunStatus
 from app.db.models import IndexRun, Repo
 from app.indexer.cloner import CloneError, _validate_url, cleanup_workspace, clone_repo
+from app.indexer.communities import build_communities
 from app.indexer.graph_builder import BuildStats, GraphBuilder
 from app.indexer.parser.markdown import extract_markdown
 from app.indexer.parser.python import extract_python
@@ -252,7 +253,16 @@ async def index_repo(
             await session.flush()
             await phase("summarizing")
             summary_stats = await Summarizer(session, repo.id, ledger=ledger).run()
+        else:
+            log.info("index.summaries_skipped", repo_id=str(repo.id), reason="no_llm_key")
 
+        # Community detection (Leiden). The clustering is deterministic and free,
+        # so it always runs; the per-community LLM summaries are gated on
+        # llm_available inside. Feeds the global query route.
+        await phase("communities")
+        community_stats = await build_communities(session, repo.id, ledger=ledger)
+
+        if get_settings().llm_available:
             # Agent-fleet enrichment (PLAN.md §2.2) — explorers map the now-summarized
             # graph and write verified findings back. Non-fatal: if it fails or hits a
             # budget, the repo still indexes on the static + summary layers.
@@ -265,8 +275,6 @@ async def index_repo(
             repo.status = RepoStatus.ENRICHING
             await session.commit()
             fleet_result = await _run_enrichment(session, repo.id, run.id, ledger, emitter)
-        else:
-            log.info("index.summaries_skipped", repo_id=str(repo.id), reason="no_llm_key")
 
         repo.status = RepoStatus.INDEXED
         repo.indexed_at = dt.datetime.now(dt.UTC)
@@ -278,6 +286,7 @@ async def index_repo(
             "chunks": stats.chunks,
             "size_bytes": clone.size_bytes,
             "summarized": summary_stats.summarized if summary_stats else 0,
+            "communities": community_stats.communities,
             "enrichment": {
                 "subsystems": fleet_result.subsystems,
                 "findings": fleet_result.findings,

@@ -253,25 +253,52 @@ class Answerer:
         *,
         session_context: str | None = None,
         ledger: UsageLedger | None = None,
+        qtype: QuestionType | None = None,
+        repo_model: dict | None = None,
+        community_lines: list[str] | None = None,
+        route: str = "local",
     ) -> Answer:
-        # 1. Classify the question to determine how to answer.
-        qtype = await QuestionClassifier.classify(question, ledger=ledger)
+        """Answer with verified citations.
+
+        The router (query/router.py) may pre-classify (`qtype`), attach
+        repo-level enrichment (`repo_model` + `community_lines` for the global
+        route), and label the `route`. Called bare, it behaves as the plain
+        local route. Verified per-node annotations are always merged in.
+        """
+        # 1. Classify the question to determine how to answer (unless pre-classified).
+        if qtype is None:
+            qtype = await QuestionClassifier.classify(question, ledger=ledger)
         top_k = _TOP_K_BY_TYPE.get(qtype, 10)
 
         items = await self.retriever.retrieve(question, top_k=top_k, ledger=ledger)
-        if not items:
+        used_nodes = [it.node_id for it in items if it.node_id is not None]
+
+        # Enrichment: verified agent findings on the retrieved nodes (always),
+        # plus the repo model / community summaries when the router supplies them
+        # (global route). Background knowledge — claims were critic-verified at
+        # index time, but line citations must still come from the code context.
+        from app.query.enrichment import format_enrichment_block, load_annotations_for_nodes
+
+        annotations = await load_annotations_for_nodes(self.session, self.repo_id, used_nodes)
+        enrichment = format_enrichment_block(repo_model, annotations, community_lines or [])
+
+        # Unanswerable only when BOTH retrieval and enrichment came back empty —
+        # a big-picture question can be answered from the repo model alone even
+        # when no individual chunk matches it.
+        if not items and not enrichment:
             return Answer(
                 question=question,
                 text="I couldn't find anything relevant to that in this repository.",
                 question_type=qtype,
-                route="local",
+                route=route,
                 citations=[],
                 answerable=False,
                 fully_verified=True,
             )
 
-        context = _format_context(items)
-        used_nodes = [it.node_id for it in items if it.node_id is not None]
+        parts = [p for p in (_format_context(items), enrichment) if p]
+        context = "\n\n".join(parts)
+
         system = _SYSTEM_BY_TYPE.get(qtype, _SYSTEM_GENERAL)
 
         out = await self._synthesize(
@@ -302,7 +329,7 @@ class Answerer:
             question=question,
             text=out.answer,
             question_type=qtype,
-            route="local",
+            route=route,
             citations=verified,
             answerable=out.answerable,
             fully_verified=fully_verified,

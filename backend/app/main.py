@@ -16,7 +16,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app import __version__
-from app.api import events, health, repos
+from app.api import events, graph, health, repos
 from app.config import get_settings
 from app.db.session import dispose_engine, get_engine
 from app.logging import configure_logging
@@ -57,6 +57,7 @@ def create_app() -> FastAPI:
     app.include_router(health.router)
     app.include_router(repos.router)
     app.include_router(events.router)
+    app.include_router(graph.router)
     return app
 
 

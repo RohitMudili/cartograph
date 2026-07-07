@@ -29,7 +29,7 @@ from app.db.models import IndexRun, Question, Repo
 from app.db.session import get_session
 from app.indexer.cloner import CloneError, PrivateRepoError
 from app.indexer.pipeline import start_index
-from app.query.answerer import Answerer
+from app.query.router import answer_question
 from app.session.store import add_message, format_context
 from app.session.store import create_session as create_session_in_redis
 
@@ -393,7 +393,9 @@ async def ask_question(
     session_context = await format_context(session_id)
 
     t0 = dt.datetime.now(dt.UTC)
-    ans = await Answerer(session, repo_id).answer(
+    ans = await answer_question(
+        session,
+        repo_id,
         body.question,
         session_context=session_context,
     )

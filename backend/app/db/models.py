@@ -202,6 +202,39 @@ class Chunk(Base):
     )
 
 
+class Community(Base):
+    """A cluster of related nodes found by graph clustering (GraphRAG layer).
+
+    Leiden partitions the structural graph (imports/calls/inherits, weighted)
+    into communities; each gets an optional LLM title + summary composed
+    bottom-up from its members' summaries. The global query route answers
+    big-picture questions from these instead of re-reading code. Single-level
+    for v1 (`level=0`); the hierarchy (`repo → subsystem → cluster`) is a
+    documented extension.
+    """
+
+    __tablename__ = "communities"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    repo_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("repos.id", ondelete="CASCADE"), nullable=False
+    )
+    level: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    # Stable key within the repo, e.g. "c0", "c1" — cited by the global route.
+    key: Mapped[str] = mapped_column(String(32), nullable=False)
+    # LLM-written label + summary; null until (and unless) the LLM pass runs.
+    title: Mapped[str | None] = mapped_column(String(255))
+    summary: Mapped[str | None] = mapped_column(Text)
+    # Member node ids (BigInteger node PKs as a JSON list).
+    node_ids: Mapped[list[int]] = mapped_column(JSONB, default=list, nullable=False)
+    size: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("repo_id", "level", "key", name="uq_communities_repo_level_key"),
+        Index("ix_communities_repo", "repo_id"),
+    )
+
+
 class IndexRun(Base):
     """One indexing run (full / incremental / escalation) — the cost + event anchor."""
 
