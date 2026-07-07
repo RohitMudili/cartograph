@@ -7,7 +7,7 @@
 
 | | |
 |---|---|
-| **Status** | Planning |
+| **Status** | Building — backend spine + fleet + query intelligence done; big UI views next |
 | **Timeline** | ~4 weeks to public v1 |
 | **LLM Provider** | Google Gemini (`google-genai` Python SDK) |
 | **Primary goals** | (1) Portfolio piece demonstrating SOTA multi-agent + GraphRAG engineering to AI engineers and hiring managers. (2) Genuinely useful tool for onboarding onto unfamiliar codebases. |
@@ -193,6 +193,13 @@ Design rules that keep this honest:
 
 #### Step 3: Community detection + hierarchical summaries
 
+> **Status (2026-07-08): ✅ BUILT (flat)** in `backend/app/indexer/communities.py` —
+> Leiden over the weighted structural graph (CALLS 1.0 … TESTS 0.4, CONTAINS
+> excluded; seeded for determinism), persisted to the `communities` table
+> (migration 0011) with Flash-written titles/summaries, run as a `communities`
+> pipeline phase. Flat single-level clustering for now; the 2–3 level hierarchy
+> and git co-change weighting below remain future polish.
+
 - Run **Leiden** clustering (via `igraph`/`leidenalg`) over the enriched graph
   (weighted: structural edges + co-change affinity from git history).
 - Build a 2–3 level community hierarchy: `repo → subsystem communities → tight clusters`.
@@ -207,6 +214,16 @@ calls + ~150 community summaries. Target: **< $1.00 and < 3 minutes** on Flash-t
 pricing for mid-size repos. These numbers go in the README once measured.
 
 ### 2.3 Phase 2 — Query pipeline
+
+> **Status (2026-07-08): ✅ BUILT** — `query/router.py` (single entry point behind
+> `POST /questions`), `query/enrichment.py` (RepoModel / verified annotations /
+> community summaries → one background-knowledge prompt block),
+> `query/escalation.py` (one scoped explorer → critic → write-back under an
+> `ESCALATION` IndexRun). Implementation detail vs. the spec below: the route is
+> picked from the existing question-type classification (architecture/onboarding →
+> global when repo-level knowledge exists) rather than a separate router call, and
+> escalation triggers on an unanswerable first pass. Hybrid retrieval + citation
+> verification below were already live.
 
 #### Router
 
@@ -838,14 +855,16 @@ Each week ends in something demoable. Cut scope, never quality of what ships.
 - ✅ REST demo + first real cost (LangSmith). Now running on Supabase.
 - ✅ **Milestone hit:** asked pybktree real questions → correct, verified citations.
 
-### Week 2 — The fleet (multi-agent enrichment + GraphRAG) — ⚠️ MOSTLY DONE
+### Week 2 — The fleet (multi-agent enrichment + GraphRAG) — ✅ DONE (minus TS grammar)
 - ✅ Supervisor topology: planner → parallel explorers → synthesizer → critic → librarian.
 - ✅ Agent tools, structured findings, write-back (Node.annotations), run budgets,
   event log + replay/WS API. Tested (`tests/integration/test_fleet.py`).
-- ❌ Leiden communities + hierarchical summaries; global route; router; escalation
-  route with write-back. (The escalation route can reuse the fleet's explorer.)
+- ✅ Leiden communities (flat, with Flash summaries; hierarchy is future polish);
+  global route; router; escalation route with write-back (reuses the fleet's
+  explorer + critic). Tested (`tests/integration/test_intelligence.py`).
 - ❌ TypeScript grammar support.
-- ❌ **Milestone:** full index run with event log; global question from community summaries.
+- ✅ **Milestone:** full index run with event log; global questions ground in the
+  RepoModel + community summaries.
 
 ### Week 3 — The face (UI) — ⚠️ PARTIAL (Chat + Landing done; the big views not)
 - ⚠️ Next.js app: ✅ **Chat** (working — threaded Q&A, verified citation chips,
@@ -868,15 +887,17 @@ Each week ends in something demoable. Cut scope, never quality of what ships.
 - ❌ **Milestone:** public URL + repo + writeup + video.
 
 ### Net remaining, by area (see STATUS.md for the itemized checklist)
-- **Backend:** router/global/escalate routes, communities, TypeScript extractor,
-  durable worker/queue (indexing now runs as an in-process background task),
-  graph/walkthrough APIs, GitHub OAuth, incremental re-index, answerer reading
-  enrichment annotations. (✅ markdown extractor, ✅ WebSocket event stream + replay.)
-- **Frontend:** Atlas, code panel, app shell + drawer. (✅ landing, ✅ 3D hero,
+- **Backend:** TypeScript extractor, durable worker/queue (indexing now runs as an
+  in-process background task), GitHub OAuth, incremental re-index.
+  (✅ router/global/escalate routes with write-back, ✅ Leiden communities,
+  ✅ graph/file/walkthrough APIs, ✅ answerer reads enrichment annotations,
+  ✅ markdown extractor, ✅ WebSocket event stream + replay.)
+- **Frontend:** Atlas, code panel, walkthrough view, app shell + drawer — the
+  backend APIs for all of these are live and tested. (✅ landing, ✅ 3D hero,
   ✅ Google sign-in, ✅ Chat, ✅ Mission Control + event store, ✅ "my repos"/history.)
 - **Agent fleet:** ✅ §2.2 topology built (planner→explorers→synthesizer→critic→
-  librarian + event stream) and ✅ rendered live in Mission Control. Remaining around
-  it: Leiden communities and the query router/global/escalate routes.
+  librarian + event stream), ✅ rendered live in Mission Control, ✅ feeding the
+  query layer (annotations/RepoModel/communities in answers; escalation write-back).
 - **Cross-cutting:** eval harness, deploy/demo/writeup.
 
 ### Explicit cut-line (if behind schedule)

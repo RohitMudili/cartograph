@@ -116,20 +116,22 @@ To swap providers or models: change the strings in `.env` (`REASONING_MODEL`,
 
 ## The database (`db/`)
 
-- `models.py` — the ORM. `Repo → Node → Edge → Chunk → IndexRun → Question`.
-  SQLAlchemy 2.0 typed (`Mapped[...]`). `Question` table is now **active** — used by
-  `POST /api/repos/{id}/questions` to persist Q&A history. `owner_user_id` on repos
-  and questions drives per-user ownership + RLS. `communities`/`agent_events` still
-  defined but unused until the agent fleet lands.
+- `models.py` — the ORM. `Repo → Node → Edge → Chunk → IndexRun → Question`,
+  plus `AgentEvent` (the fleet's durable event log) and `Community` (Leiden
+  clusters: repo-scoped `key`/`title`/`summary`/`node_ids`/`size`). SQLAlchemy 2.0
+  typed (`Mapped[...]`). Every table is active. `owner_user_id` on repos and
+  questions drives per-user ownership + RLS.
 - `session.py` — async engine/session. **Contains the Supabase pgbouncer fix**
   (`statement_cache_size=0`). `db_session` test fixture rolls back.
 - `enums.py` — native Postgres enums (stored as UPPERCASE member names).
-- `migrations/` — alembic, sequential `0001`..`0009`, head = `0009`. pgvector enabled
+- `migrations/` — alembic, sequential `0001`..`0011`, head = `0011`. pgvector enabled
   in 0001; graph schema in 0002; RLS deny-all in 0004; chunk tsvector in 0005;
   **0006**: adds `owner_user_id` on repos, `questions` table, and per-user RLS policies.
   **0007**: adds `user_profiles` table (maps `owner_user_id` to optional email/github).
   **0008**: adds `session_id` on questions for chat session grouping.
   **0009**: adds `conversation_id` on questions for per-turn tracking.
+  **0010**: adds `agent_events` (the fleet's per-run event log, monotonic `seq`).
+  **0011**: adds `communities` (Leiden clusters + summaries).
   The `migrations/env.py` now includes the pgbouncer `statement_cache_size=0` fix
   (applies when connecting through the Supabase pooler).
 
@@ -367,11 +369,42 @@ components/mission/MissionControl.tsx
 
 ---
 
+## The query-intelligence layer (`query/router.py`, `enrichment.py`, `escalation.py`)
+
+Built per `PLAN.md §2.3`. `answer_question()` in `router.py` is the single entry
+point behind `POST /questions`:
+
+- **Route selection** — the existing question-type classification doubles as the
+  router: architecture/onboarding questions take the **global** route when
+  repo-level knowledge exists (RepoModel and/or community summaries), everything
+  else stays **local**.
+- **Enrichment** (`enrichment.py`) — read-only loaders for the RepoModel (REPO
+  node annotation), verified per-node annotations, and community summaries, plus
+  `format_enrichment_block()` which renders them as one background-knowledge
+  prompt block. The answerer merges verified annotations on retrieved nodes into
+  every route's context, and can answer from enrichment alone when retrieval is
+  empty.
+- **Escalation** (`escalation.py`) — when the first pass is unanswerable and an
+  LLM is available: one scoped explorer (the fleet's own explorer + tools, seeded
+  with the fqnames retrieval surfaced), the critic verifies its findings, the
+  librarian-style write-back lands them in `Node.annotations` under an
+  `ESCALATION` IndexRun, then the question is answered once more. Never raises —
+  a failed escalation just returns the honest "couldn't answer".
+- **Communities** (`indexer/communities.py`) — Leiden clustering (igraph +
+  leidenalg, seeded) over weighted structural edges, run as the `communities`
+  pipeline phase; persisted largest-first as `c0`, `c1`, … with optional
+  Flash-written titles/summaries.
+
+The graph-facing read APIs live in `api/graph.py`: `GET /graph` (degree-ranked
+slice + communities), `GET /file` (source rebuilt from chunks), and
+`GET /walkthrough` (the RepoModel's onboarding steps).
+
+---
+
 ## Where the spec lives for things not yet built
 
-- **Query router / global / escalate routes** → `PLAN.md §2.3`. Goes in `query/`.
-  (The escalation route can reuse the fleet's explorer + tools.)
 - **Atlas UI** (renders the graph + the librarian's annotations) → `FRONTEND.md §5.3`.
-- **Feeding enriched annotations into the answer layer** — the librarian writes
-  `Node.annotations`; the answerer doesn't read them yet.
+  Backend: `GET /api/repos/{id}/graph` is live.
+- **Code panel / walkthrough view** → `FRONTEND.md`. Backend: `GET /file` and
+  `GET /walkthrough` are live.
 - **Eval harness** → `PLAN.md §6`. Goes in `evals/`.

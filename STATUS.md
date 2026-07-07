@@ -3,14 +3,16 @@
 _Working log for picking up where we left off. Not the plan (see PLAN.md) — this
 is "where are we right now and what's next."_
 
-**Last updated:** 2026-06-25 (paste → live-mapping flow: POST kicks off indexing in
-the background and returns instantly, the UI routes straight to the live map with a
-phase intro (cloning/parsing/summarizing) → agents → a graceful "Mapping finished" /
-"Map ready" panel + "Chat about your repo"; LLM retry rides out transient Gemini
-429/503. Earlier: Mission Control UI; DB is Supabase-only; enrichment FK fix; the
-LangGraph agent fleet — planner → parallel
-explorers → synthesizer → critic → librarian, with agent_events stream + replay/WS
-API; runs during indexing as the ENRICHING phase. Backend tested green.)
+**Last updated:** 2026-07-08 (**query intelligence milestone**: the query router
+now routes local/global/escalate — architecture/onboarding questions ground in the
+synthesized RepoModel + Leiden community summaries; unanswerable questions spawn one
+scoped explorer whose critic-verified findings are WRITTEN BACK to the graph before
+re-answering (the "learning cache" loop is live). Leiden community detection runs as
+a pipeline phase (migration 0011). Verified `Node.annotations` now merge into every
+answer's context. New read APIs for the coming UI views: `GET /graph` (degree-capped
+slice), `GET /file` (chunk-reconstructed source), `GET /walkthrough`. Earlier: paste →
+live-mapping flow; Mission Control UI; the agent fleet with agent_events stream +
+replay/WS API. Backend tested green: 71 passing.)
 
 ---
 
@@ -99,6 +101,33 @@ door now sells it.
   from retrieved context only, every citation checked against indexed source;
   hallucinated citations are caught + stripped (one regen attempt first), never
   shown as verified. `POST /api/repos/{id}/questions`.
+- **Query router (local / global / escalate)** — `query/router.py` is now the single
+  entry point behind `POST /questions`. Architecture/onboarding questions take the
+  **global route** when repo-level knowledge exists (the synthesizer's RepoModel +
+  Leiden community summaries are injected as a background-knowledge block). When the
+  first pass is unanswerable and an LLM is available, the **escalation route**
+  (`query/escalation.py`) spawns ONE scoped explorer, runs the critic over its
+  findings, writes accepted ones back to `Node.annotations` (attributed
+  `explorer:escalation`, under an `ESCALATION` IndexRun), and answers once more —
+  the graph is a learning cache, live. The route label rides on the persisted
+  Question for the UI transparency strip.
+- **Enrichment feeds answers** — `query/enrichment.py` loads the RepoModel, verified
+  per-node annotations, and community summaries; the answerer merges verified
+  annotations on retrieved nodes into EVERY route's context, and can answer from
+  enrichment alone when retrieval comes back empty (big-picture questions no longer
+  depend on the right 10 chunks surfacing).
+- **Leiden community detection** — `indexer/communities.py` clusters the structural
+  graph (igraph + leidenalg, seeded, weighted by edge kind: CALLS 1.0 … TESTS 0.4,
+  CONTAINS excluded) as a `communities` pipeline phase after summarizing; persists
+  largest-first as `c0`, `c1`, … with optional Flash-written titles/summaries
+  (gated on `llm_available`, stops at the first LLM failure to protect quota).
+  Migration head is now **0011** (`communities` table).
+- **Graph-facing read APIs** (`api/graph.py`) — what Atlas / the code panel / the
+  walkthrough view will consume: `GET /api/repos/{id}/graph?max_nodes=` (degree-ranked
+  node slice + edges + community membership), `GET /api/repos/{id}/file?path=`
+  (source reconstructed from indexed chunks — no re-clone), and
+  `GET /api/repos/{id}/walkthrough` (the RepoModel's onboarding steps; 404 with a
+  reason until enrichment has produced one).
 - **Question-type-aware prompting** — before retrieval, the answerer classifies the
   question into one of 6 types (onboarding / architecture / specific-symbol / how-to /
   comparison / general) using the cheap Flash-tier model. Retrieval breadth adjusts
@@ -109,9 +138,9 @@ door now sells it.
   constraints. Falls back to `general` on any error.
 - **Rate limiter** — token-bucket paces calls to `LLM_RPM` (default 10) so we
   don't trip Gemini free-tier 429s.
-- **Infra** — Supabase (async + pgbouncer fix), migrations at head **0009**
-  (0006 plus `session_id` on questions in 0008, `conversation_id` on questions in 0009,
-  `user_profiles` table in 0007), deny-all RLS + per-user RLS on repos/questions.
+- **Infra** — Supabase (async + pgbouncer fix), migrations at head **0011**
+  (0007 `user_profiles`, 0008 `session_id`, 0009 `conversation_id`, 0010
+  `agent_events`, 0011 `communities`), deny-all RLS + per-user RLS on repos/questions.
 - **JWT library:** `PyJWT` (replaced `python-jose` which doesn't support EC keys
   needed for Supabase ES256 tokens). Use `PyJWK` for JWKS key construction.
 - **Upstash Redis session store** — `app/session/store.py`: 1-hour TTL per session,
@@ -133,7 +162,7 @@ questions through the full retrieve→synthesize→verify chain:
 - *"How does BKTree add items and search for nearby matches?"* → accurate
   two-method explanation incl. the pruning logic, **2 VERIFIED** citations.
 
-### Tests: backend 46 passing, CI green. Frontend: tsc + eslint + build clean.
+### Tests: backend 71 passing, CI green. Frontend: tsc + eslint + build clean.
 
 ### Run it locally (two terminals)
 
@@ -165,12 +194,17 @@ Honest accounting (✅ done · ⚠️ partial · ❌ not built). The "answer one
 core is solid and there's now a real front door; the "full query intelligence +
 streaming + agent fleet + the big graph UI views" is the bulk of remaining work.
 
-### Backend  (answer-one-question core ~98% · full scope ~58%)
+### Backend  (answer-one-question core ~100% · full scope ~80%)
 
 Query / answer layer:
-- ❌ **Router** (local / global / escalate) — every question forces `local` today
-- ❌ **Global route** — big-picture answers from community summaries
-- ❌ **Escalation route + write-back** — the "graph is a learning cache" loop
+- ✅ **Router** (local / global / escalate) — `query/router.py`, wired into
+  `POST /questions`; route label persisted on the Question
+- ✅ **Global route** — RepoModel + Leiden community summaries injected as
+  background knowledge for architecture/onboarding questions
+- ✅ **Escalation route + write-back** — one scoped explorer → critic → verified
+  findings written to `Node.annotations` → re-answer. The learning-cache loop, live.
+- ✅ **Enrichment in answers** — verified annotations merge into every route's
+  context; enrichment alone can answer when retrieval comes back empty
 - ✅ **Answer quality (task #20)** — markdown/README indexing ✅ DONE;
   question-type-aware prompting ✅ DONE (the answerer classifies questions into 6
   types and tailors the system prompt + retrieval breadth per type).
@@ -180,7 +214,9 @@ Indexing layer:
   (`parser/markdown.py`, wired into `EXTRACTORS`), so READMEs/docs feed retrieval.
 - ❌ **Other docs / config extractors** (`.rst`, `.txt`, `.toml`, `.yaml`, etc. — not parsed)
 - ❌ **TypeScript / JavaScript extractor** (v1 was meant to cover TS/JS too)
-- ❌ **Community detection (Leiden) + hierarchical summaries** (GraphRAG big-picture layer)
+- ✅ **Community detection (Leiden) + summaries** — `indexer/communities.py`, runs
+  as a pipeline phase; flat (single-level) clustering with per-community Flash
+  summaries. A 2–3 level hierarchy is still future polish.
 - ❌ **Incremental re-indexing** (diff-based; today re-index = full re-run / skip-if-indexed)
 - ⚠️ **Metrics** — LOC/fan-in/out done; git churn + graph centrality not computed
 
@@ -206,8 +242,12 @@ Production shape:
   (backfill + live) and a replay `GET …/events?after_seq=`. Drives Mission Control.
 - ✅ **`agent_events` table + event bus** — migration 0010; `events.py` persists
   with per-run monotonic `seq` and fans out to an in-process hub.
-- ❌ **Graph-slice API** (`GET /repos/{id}/graph`) — what Atlas queries
-- ❌ **Walkthrough generation** (`GET /repos/{id}/walkthrough`)
+- ✅ **Graph-slice API** (`GET /api/repos/{id}/graph`) — degree-ranked node cap,
+  edges, community membership, annotation counts. What Atlas will query.
+- ✅ **File API** (`GET /api/repos/{id}/file?path=`) — source reconstructed from
+  indexed chunks, for the citation code panel.
+- ✅ **Walkthrough API** (`GET /api/repos/{id}/walkthrough`) — serves the
+  RepoModel's onboarding steps (404s with a reason until enrichment runs).
 - ⚠️ **Budget caps** — LLM rate limiter done; per-run hard $ cap w/ graceful abort not wired
 
 ### Frontend  (~62%)
@@ -231,8 +271,15 @@ Production shape:
   + `lib/{events,runState,useRunEvents}.ts`. Replay-first: one reducer renders live
   and replayed runs identically. Verified end-to-end via headless capture.
 - ❌ **Atlas** (`/r/[repo]/atlas`) — force-directed / semantic-zoom graph + inspector
+  (backend `GET /graph` is ready and tested)
 - ❌ **Code panel** — clicking a Chat citation chip should open source at the lines
-- ❌ **Walkthrough view**
+  (backend `GET /file` is ready and tested)
+- ❌ **Walkthrough view** (backend `GET /walkthrough` is ready and tested)
+- ⚠️ **"communities" pipeline phase not in the frontend reducer** — the pipeline now
+  emits `phase: communities` between summarizing and enriching; `lib/runState.ts`
+  (`PIPELINE_PHASES` + `PHASES`), PhaseIntro, and RunFooter labels don't know it yet
+  (harmless — the phase just isn't shown). Small fix, bundled into the next
+  frontend milestone.
 - ❌ **App shell** — icon rail + telemetry drawer (only a minimal Chat top bar + the
   landing nav exist)
 - ✅ **"My repos" / history** — `GET /api/repos` + `frontend/app/repos/page.tsx`
@@ -284,10 +331,13 @@ The PLAN §2.2 topology is built end to end (`backend/app/agents/`):
 - ✅ **Mission Control UI consumes the stream** (frontend, see Frontend section).
 - ✅ **Tests** — `tests/integration/test_fleet.py`: planner, tools, critic
   auto-reject, librarian write-back (deterministic fake LLM, real Postgres).
-- ⏳ **Remaining:** feed enriched annotations into the query/answer layer; a full
-  explorer-revision loop (currently the critic re-judges rejects once); harden the
-  LLM retry/backoff for sustained Gemini 429/503 (a free-tier quota spike can abort
-  the fleet — the index still completes, but enrichment is skipped that run).
+- ✅ **Annotations feed the query/answer layer** — done (see Query router above):
+  verified findings + the RepoModel + community summaries all flow into answers,
+  and escalation reuses the fleet's explorer + critic for write-back.
+- ⏳ **Remaining:** a full explorer-revision loop (currently the critic re-judges
+  rejects once); the LLM retry rides out transient 429/503 (10 attempts, exp
+  backoff) but a sustained free-tier quota exhaustion still skips enrichment for
+  that run (gracefully — the index completes).
 
 > **The agent fleet → event stream → Mission Control are now all built and wired**
 > as one connected feature. Replay-first: the UI renders recorded runs and live runs
@@ -298,11 +348,13 @@ The PLAN §2.2 topology is built end to end (`backend/app/agents/`):
   (credibility moat; also grades task #20)
 - ❌ **Deploy + demo video + writeup**
 
-**Overall v1 ≈ 75%.** Core value (cited Q&A) + auth identity + question-type-aware
-prompting + the **multi-agent enrichment fleet** + **Mission Control** (the live +
-replay view that renders it) are now complete end to end. Biggest remaining chunks:
-**Atlas** (the graph + the annotations the librarian writes), feeding the enriched
-annotations into the answer layer, the eval harness, and deploy/demo/writeup.
+**Overall v1 ≈ 82%.** Core value (cited Q&A) + auth identity + the **multi-agent
+enrichment fleet** + **Mission Control** + the full **query-intelligence layer**
+(router with global/escalate, Leiden communities, enrichment-grounded answers,
+write-back) are complete end to end, and the graph/file/walkthrough APIs the big
+UI views need are live. Biggest remaining chunks: the **frontend views** (app
+shell, Atlas, chat code panel, walkthrough — the backend for all of them is
+ready), TypeScript extractor, eval harness, GitHub OAuth, deploy/demo/writeup.
 
 ### Dependency gotchas (new, this session)
 - **`python-jose` doesn't support EC JWK keys** — `jose.jwk.construct()` fails
@@ -318,6 +370,10 @@ annotations into the answer layer, the eval harness, and deploy/demo/writeup.
 
 ## Housekeeping / notes
 
+- **Supabase free-tier auto-pause:** the project paused itself on 2026-07-08 (the
+  pooler rejects with `tenant/user not found` while paused; it also takes a few
+  minutes after unpausing to re-register the tenant — keep retrying). Resumed same
+  day and migrated: **the live DB is at head 0011** (`communities` table applied).
 - **🔑 ROTATE EXPOSED KEYS:** the Google + LangSmith keys, Supabase password, and
   the Supabase anon key appeared in the build chat. Gitignored (never committed)
   but rotate them. The anon key is a public client key by design, but rotating the

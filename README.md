@@ -17,12 +17,16 @@ question after the first one.
 > written to get you productive in one read — conventions, gotchas, how to run it,
 > and what's left. Then [`STATUS.md`](STATUS.md) for the live "where we are" log.
 
-> **Status:** the backend "ask a question → get a verified cited answer" core works
-> end-to-end (proven on live data). Features shipped: **Chat UI** with session
-> sidebar, **landing page** (3D hero graph), **Google sign-in** (end-to-end,
-> backend JWT validation + RLS), **"My repos" page**, **Redis session store**
-> (Upstash, 1-hour TTL), and **UserProfile table**. The multi-agent fleet and the
-> graph/Mission-Control views are not built yet — see [`STATUS.md`](STATUS.md)
+> **Status:** the backend is feature-complete for the core loop: paste a repo →
+> the **multi-agent fleet** (planner → parallel explorers → synthesizer → critic →
+> librarian) maps it live on **Mission Control** (replay + WebSocket stream) →
+> ask questions and the **query router** answers local/global/escalate — global
+> questions ground in the synthesized repo model + **Leiden community summaries**,
+> and unanswerable ones spawn a scoped explorer whose verified findings are
+> written back into the graph. Also shipped: **Chat UI** with session sidebar,
+> **landing page** (3D hero graph), **Google sign-in**, **"My repos"**, Redis
+> session store. Remaining: the Atlas/code-panel/walkthrough views, TypeScript
+> extractor, eval harness, GitHub OAuth, deploy — see [`STATUS.md`](STATUS.md)
 > for the itemized breakdown. Architecture: [`PLAN.md`](PLAN.md); UI plan:
 > [`FRONTEND.md`](FRONTEND.md); code-navigation map:
 > [`ARCHITECTURE.md`](ARCHITECTURE.md); design/product: [`DESIGN.md`](DESIGN.md) /

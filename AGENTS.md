@@ -76,12 +76,14 @@ cartograph/
 │   │   ├── api/             HTTP routers: health.py, repos.py (index + questions)
 │   │   ├── db/              session.py, base.py, models.py, enums.py, health.py, migrations/
 │   │   ├── indexer/         cloner.py, pipeline.py, graph_builder.py, summarizer.py,
-│   │   │                    parser/{python.py,markdown.py,types.py}
+│   │   │                    communities.py (Leiden), parser/{python.py,markdown.py,types.py}
 │   │   ├── agents/          llm.py (provider-agnostic LLM wrapper) + the enrichment
 │   │   │                    FLEET: graph_def.py (supervisor), planner/explorer/
 │   │   │                    synthesizer/critic/librarian, tools.py, schemas.py, events.py
-│   │   ├── query/           retrieval.py, answerer.py, verifier.py
-│   │   └── api/             health.py, repos.py, events.py (agent-event replay + WS)
+│   │   ├── query/           retrieval.py, answerer.py, verifier.py, router.py
+│   │   │                    (local/global/escalate), enrichment.py, escalation.py
+│   │   └── api/             health.py, repos.py, events.py (agent-event replay + WS),
+│   │                        graph.py (graph slice / file / walkthrough)
 │   └── tests/          unit/ (no DB) + integration/ (db/network markers)
 │
 └── frontend/          ← Next.js 16, React 19, Tailwind v4, TypeScript
@@ -133,9 +135,9 @@ These are the things that have actually bitten us. Internalize them.
 7. **Native Postgres enums** (`repo_status` etc.) store the Python enum **member
    NAMES (UPPERCASE)**, not `.value`. Adding an enum value needs an `ALTER TYPE ...
    ADD VALUE` migration (see `0003`). Reference the UPPERCASE label.
-8. **Migrations are sequential** (`0001`..`0006`). After autogenerate, rename to the
-   next number AND set `revision`/`down_revision` to match. Migration head is **0006**
-   (adds `owner_user_id` on repos, `questions` table, and per-user RLS policies).
+8. **Migrations are sequential** (`0001`..`0011`). After autogenerate, rename to the
+   next number AND set `revision`/`down_revision` to match. Migration head is **0011**
+   (`communities` table for Leiden clusters; 0010 added `agent_events`).
 9. **The cloner deliberately blocks `file://` and disables git hooks** — security.
    Don't "fix" it to clone local paths; tests work around it via the local-dir path.
 10. **`GIT_TERMINAL_PROMPT=0`** in the cloner is load-bearing — without it, a private
@@ -256,11 +258,13 @@ blocks it per-account). Don't re-attempt that.
 
 ## 8. The data model (what's in Postgres)
 
-`repos` → `nodes` (symbols: file/class/function/method, with summary + embedding) →
-`edges` (contains/imports/calls/inherits, confidence-scored) → `chunks` (source
-slices with exact line ranges + tsvector + embedding) → `index_runs` (cost/tokens).
-Tables defined but unused-until-later: `communities`, `agent_events`, `questions`.
-Full schema + rationale: `PLAN.md §3` and `backend/app/db/models.py`.
+`repos` → `nodes` (symbols: file/class/function/method, with summary + embedding +
+verified `annotations` written by the fleet) → `edges` (contains/imports/calls/
+inherits, confidence-scored) → `chunks` (source slices with exact line ranges +
+tsvector + embedding) → `index_runs` (cost/tokens; kinds INDEX and ESCALATION) →
+`questions` (Q&A history with route + citations) → `agent_events` (the fleet's
+per-run event log) → `communities` (Leiden clusters + summaries). Every table is
+active. Full schema + rationale: `PLAN.md §3` and `backend/app/db/models.py`.
 
 The **chunk's exact line range is what makes citation verification mechanical** —
 the verifier checks a claimed `file:line` snippet against the real chunk text.
@@ -269,26 +273,25 @@ the verifier checks a claimed `file:line` snippet against the real chunk text.
 
 ## 9. What to build next (pointers)
 
-`STATUS.md` has the itemized list. The big remaining pieces, in rough order:
-Done since: ✅ Google sign-in backend (JWT/JWKS + `owner_user_id` + RLS 0006);
-✅ answer quality (markdown indexing + question-type prompting); ✅ the **multi-agent
-enrichment fleet** (`backend/app/agents/`, `PLAN.md §2.2`) with the agent-event
-stream + replay/WS API; ✅ **Mission Control** (`/r/[repo]/run`) — the live + replay
-view of the fleet, with the paste → background-index → live-map → graceful-finish
-flow (`components/mission/`, `lib/{events,runState,useRunEvents}.ts`). Remaining,
-in rough order:
+`STATUS.md` has the itemized list. Done since this section was first written:
+✅ Google sign-in end to end; ✅ answer quality (markdown indexing + question-type
+prompting); ✅ the **multi-agent enrichment fleet** with the agent-event stream +
+replay/WS API; ✅ **Mission Control** (`/r/[repo]/run`); ✅ the **query-intelligence
+layer** — router (local/global/escalate with write-back), Leiden communities,
+enrichment-grounded answers — plus the graph/file/walkthrough read APIs the big
+UI views need. Remaining, in rough order:
 
-1. **Atlas UI** (`/r/[repo]/atlas`) — the graph + the librarian's `Node.annotations`
-   (verified findings) in an inspector. (`FRONTEND.md §5.3`.)
-2. **Answer layer reads enrichment** — the librarian writes `Node.annotations`;
-   the answerer doesn't read them yet. Feeding verified findings + the RepoModel
-   into retrieval/synthesis is high-leverage and small.
-3. **Query router** (local/global/escalate) — every question forces `local` today;
-   the escalation route can reuse the fleet's explorer + tools. (`PLAN.md §2.3`.)
-4. **Backend production shape** — Leiden communities; a **durable** job queue/worker
-   (indexing now runs as an in-process background task via `start_index`, but it
-   doesn't survive a restart / isn't multi-process); TypeScript extractor.
-5. **Eval harness, GitHub OAuth (private repos), deploy + demo + writeup.**
+1. **The big frontend views** — app shell (icon rail), **Atlas** (`/r/[repo]/atlas`:
+   graph + inspector over `GET /graph`), the chat **code panel** (citation chip →
+   `GET /file`), and the **walkthrough view** (`GET /walkthrough`). Also teach
+   `lib/runState.ts` the new `communities` pipeline phase. (`FRONTEND.md §5.3`.)
+2. **TypeScript extractor** (tree_sitter_typescript is already a dependency) and
+   the **eval harness** (`evals/` — the credibility moat).
+3. **GitHub OAuth for private repos** (`PLAN.md §9A`) — wiring + operator setup.
+4. **Backend production shape** — a **durable** job queue/worker (indexing runs as
+   an in-process background task via `start_index`; doesn't survive a restart),
+   incremental re-index.
+5. **Deploy + demo video + writeup.**
 
 > **The agent fleet → WebSocket event stream → Mission Control UI are ONE connected
 > feature** — none demos without the other two. The frontend is designed
