@@ -157,6 +157,62 @@ export interface CreateSessionResponse {
   session_id: string;
 }
 
+// ── Graph-facing read APIs (backend app/api/graph.py) ──────────────────────
+
+export interface GraphNode {
+  id: number;
+  fqname: string;
+  kind: string;
+  path: string | null;
+  start_line: number | null;
+  end_line: number | null;
+  summary: string | null;
+  community: string | null; // community key, e.g. "c0"
+  annotations: number; // count of verified findings on this node
+  degree: number;
+}
+
+export interface GraphEdge {
+  src: number;
+  dst: number;
+  kind: string;
+  confidence: number;
+}
+
+export interface GraphCommunity {
+  key: string;
+  title: string | null;
+  summary: string | null;
+  size: number;
+}
+
+export interface GraphSlice {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+  communities: GraphCommunity[];
+  total_nodes: number; // in the repo, before capping
+}
+
+export interface FileContent {
+  path: string;
+  found: boolean;
+  start_line: number | null;
+  end_line: number | null;
+  truncated: boolean;
+  text: string;
+}
+
+export interface WalkthroughStep {
+  title: string;
+  detail: string;
+  fqname: string | null;
+}
+
+export interface Walkthrough {
+  summary: string;
+  steps: WalkthroughStep[];
+}
+
 export const api = {
   indexRepo: (url: string, branch?: string) =>
     request<IndexResult>("/api/repos", {
@@ -186,5 +242,14 @@ export const api = {
 
   listSessions: (repoId: string) =>
     request<SessionSummary[]>(`/api/repos/${repoId}/sessions`),
+
+  getGraph: (repoId: string, maxNodes = 400) =>
+    request<GraphSlice>(`/api/repos/${repoId}/graph?max_nodes=${maxNodes}`),
+
+  getFile: (repoId: string, path: string) =>
+    request<FileContent>(`/api/repos/${repoId}/file?path=${encodeURIComponent(path)}`),
+
+  getWalkthrough: (repoId: string) =>
+    request<Walkthrough>(`/api/repos/${repoId}/walkthrough`),
 };
 

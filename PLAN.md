@@ -866,16 +866,18 @@ Each week ends in something demoable. Cut scope, never quality of what ships.
 - ✅ **Milestone:** full index run with event log; global questions ground in the
   RepoModel + community summaries.
 
-### Week 3 — The face (UI) — ⚠️ PARTIAL (Chat + Landing done; the big views not)
-- ⚠️ Next.js app: ✅ **Chat** (working — threaded Q&A, verified citation chips,
-  transparency strip; ❌ code panel on chip click). ✅ **Landing page** (brand
-  surface, with a 3D R3F hero graph + a live verified-citation terminal).
-  ✅ **Google sign-in** (Supabase, end to end — frontend + backend JWT + `owner_user_id`).
-  ✅ **Mission Control** (`/r/[repo]/run`, live + replay agent-event stream).
-  ❌ **Atlas** (semantic-zoom graph).
-- ❌ Onboarding walkthrough generation + overlay.
-- ✅ Design tokens (DESIGN.md, dark instrument-panel) wired; ⚠️ design/polish pass
-  done on the landing + chat, not the (unbuilt) big views; ❌ the screen-recordable demo.
+### Week 3 — The face (UI) — ✅ DONE (minus settings + demo recording)
+- ✅ Next.js app: **Chat** (threaded Q&A, verified citation chips → **code panel**
+  on chip click, transparency strip). **Landing page** (brand surface, 3D R3F
+  hero + live verified-citation terminal). **Google sign-in** (end to end).
+  **Mission Control** (`/r/[repo]/run`, live + replay). **Atlas**
+  (`/r/[repo]/atlas`: community-colored force-layout canvas + search + inspector;
+  plain 2D canvas instead of Sigma — the graph API caps the slice at ~400 nodes).
+  **App shell** icon rail across `/r/[repo]/*` + status-aware `/r/[repo]` redirect.
+- ✅ Onboarding **walkthrough view** (`/r/[repo]/walkthrough`, steps deep-link
+  into Atlas). The in-Atlas guided-path overlay remains future polish.
+- ✅ Design tokens (DESIGN.md, dark instrument-panel) wired everywhere;
+  ❌ the screen-recordable demo.
 - ❌ **Milestone:** the 2-minute demo recording.
 
 ### Week 4 — The proof (evals, hardening, launch) — ❌ NOT STARTED

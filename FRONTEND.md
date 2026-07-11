@@ -35,12 +35,12 @@ only), auth/multi-user, collaborative cursors, VS Code webview.
 /auth/callback         Google OAuth PKCE exchange                        ✅ BUILT
 /auth/signout          POST-only sign-out                               ✅ BUILT
 /auth/auth-error       Sign-in failure surface                          ✅ BUILT
-/r/[repo]              Redirects to /run while indexing, else /atlas     ❌ (chat is the only /r route today)
+/r/[repo]              Redirects to /run while indexing, else /atlas     ✅ BUILT
 /r/[repo]/run          Mission Control — live during runs, Replay after  ✅ BUILT
-/r/[repo]/atlas        Architecture graph + inspector + walkthrough       ❌
+/r/[repo]/atlas        Architecture graph + inspector                    ✅ BUILT (canvas force layout, not Sigma — see §5.3 note)
 /repos                "My repos" page (signed-out/empty/list states)      ✅ BUILT
-/r/[repo]/chat         Research console (threads, citations, session sidebar) ✅ BUILT
-/r/[repo]/walkthrough  Generated onboarding doc                          ❌
+/r/[repo]/chat         Research console (threads, citations, session sidebar) ✅ BUILT (+ code panel on chip click)
+/r/[repo]/walkthrough  Generated onboarding doc                          ✅ BUILT (steps deep-link into Atlas via ?focus=)
 /r/[repo]/settings     Re-index, budgets, danger zone                    ❌
 ```
 
@@ -293,11 +293,22 @@ components/                                                         (planned vs 
 │   FindingsFeed, RunFooter, ReplayScrubber, TerritoryGraph (R3F). Driven by the
 │   pure reducer lib/runState.ts + the lib/useRunEvents.ts hook (replay + live WS).
 │   (Supersedes the planned telemetry/ dir for the live-run view.)
-├── atlas/         # ❌ GraphCanvas, Inspector, NodeChip, EdgeList,
-│   WalkthroughOverlay, GraphSearch, MiniMap
+├── atlas/         # ✅ BUILT — AtlasView (search, community legend/spotlight, states),
+│   GraphCanvas (hand-rolled 2D canvas force layout: seeded FR, progressive rAF
+│   settle, pan/zoom/hover/click, camera flights), Inspector (summary, community
+│   card, grouped edges that navigate, "Ask about this" → chat ?q=, "Open code").
+│   NOTE: chose plain canvas over Sigma.js — the API caps the slice at ~400
+│   degree-ranked nodes, and it keeps the bundle small. Deferred: semantic-zoom
+│   community bubbles, edge line-styles per kind, walkthrough path overlay.
+├── code/          # ✅ BUILT — CodePanel: slide-over source viewer over GET /file,
+│   cited range highlighted amber + scrolled into view; shared by Chat + Atlas.
+├── walkthrough/   # ✅ BUILT — WalkthroughView: quiet prose steps, honest empty
+│   state, per-step deep links into Atlas (?focus=<fqname>).
 ├── chat/          # ⚠️ Chat is built but as one ChatConsole.tsx (under app/r/[repo]/chat/),
-│   not yet split into Thread/AnswerBlock/CitationChip/TransparencyStrip/CodePanel/…
-└── shell/         # ❌ TopBar, IconRail, TelemetryDrawer, CommandPalette, RepoSwitcher
+│   not yet split into Thread/AnswerBlock/CitationChip/TransparencyStrip/…
+│   Citation chips now open the shared CodePanel; ?q= pre-fills the composer.
+└── shell/         # ⚠️ IconRail ✅ BUILT (via app/r/[repo]/layout.tsx).
+│   TopBar, TelemetryDrawer, CommandPalette, RepoSwitcher remain ❌.
 ```
 
 > The Atlas graph will use Sigma.js (WebGL, 2D semantic zoom) per §5.3. The

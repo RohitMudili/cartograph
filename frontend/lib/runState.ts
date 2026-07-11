@@ -16,6 +16,7 @@ export type RunPhase =
   | "cloning"
   | "parsing"
   | "summarizing"
+  | "communities"
   | "planning"
   | "exploring"
   | "synthesis"
@@ -25,7 +26,7 @@ export type RunPhase =
   | "error";
 
 /** The pre-fleet pipeline phases, shown as an intro before the agents appear. */
-export const PIPELINE_PHASES: RunPhase[] = ["cloning", "parsing", "summarizing"];
+export const PIPELINE_PHASES: RunPhase[] = ["cloning", "parsing", "summarizing", "communities"];
 
 export interface AgentCard {
   /** Stable key: role, or `explorer:<subsystem>` for the parallel explorers. */
@@ -127,6 +128,7 @@ const PHASES: Record<string, RunPhase> = {
   cloning: "cloning",
   parsing: "parsing",
   summarizing: "summarizing",
+  communities: "communities",
   planning: "planning",
   exploring: "exploring",
   synthesis: "synthesis",

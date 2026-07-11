@@ -124,7 +124,7 @@ To swap providers or models: change the strings in `.env` (`REASONING_MODEL`,
 - `session.py` — async engine/session. **Contains the Supabase pgbouncer fix**
   (`statement_cache_size=0`). `db_session` test fixture rolls back.
 - `enums.py` — native Postgres enums (stored as UPPERCASE member names).
-- `migrations/` — alembic, sequential `0001`..`0011`, head = `0011`. pgvector enabled
+- `migrations/` — alembic, sequential `0001`..`0012`, head = `0012`. pgvector enabled
   in 0001; graph schema in 0002; RLS deny-all in 0004; chunk tsvector in 0005;
   **0006**: adds `owner_user_id` on repos, `questions` table, and per-user RLS policies.
   **0007**: adds `user_profiles` table (maps `owner_user_id` to optional email/github).
@@ -132,6 +132,7 @@ To swap providers or models: change the strings in `.env` (`REASONING_MODEL`,
   **0009**: adds `conversation_id` on questions for per-turn tracking.
   **0010**: adds `agent_events` (the fleet's per-run event log, monotonic `seq`).
   **0011**: adds `communities` (Leiden clusters + summaries).
+  **0012**: enables RLS on `user_profiles` + `alembic_version` (advisor findings).
   The `migrations/env.py` now includes the pgbouncer `statement_cache_size=0` fix
   (applies when connecting through the Supabase pooler).
 

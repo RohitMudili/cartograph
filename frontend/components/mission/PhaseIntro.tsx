@@ -16,6 +16,7 @@ const LABELS: Record<string, string> = {
   cloning: "Cloning the repository",
   parsing: "Parsing the code into a graph",
   summarizing: "Summarizing & embedding symbols",
+  communities: "Detecting code communities",
 };
 
 // Phases that come after the intro — once we're here, the intro phases are done.

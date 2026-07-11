@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
 import { AuthMenu } from "@/components/auth/AuthMenu";
+import { CodePanel, type CodeTarget } from "@/components/code/CodePanel";
 import { Button, RouteBadge, Spinner, StatusChip, VerifyBadge } from "@/components/ui";
 import {
   type AnswerResponse,
@@ -35,6 +36,17 @@ export function ChatConsole({ repoId }: { repoId: string }) {
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [sessionsLoading, setSessionsLoading] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  // Code panel: the citation currently open as source, if any.
+  const [codeTarget, setCodeTarget] = useState<CodeTarget | null>(null);
+
+  // ?q= pre-fills the composer (Atlas's "Ask about this" deep-links here).
+  // Read from window.location on mount — avoids useSearchParams' Suspense needs.
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search).get("q");
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time mount read of a browser-only value
+    if (q) setDraft(q);
+  }, []);
 
   // Load repo, and poll while it's still indexing
   useEffect(() => {
@@ -141,9 +153,10 @@ export function ChatConsole({ repoId }: { repoId: string }) {
   // conditions, not on newSession's identity.
   useEffect(() => {
     if (!sessionsLoading && !activeSessionId && repo?.status === "indexed") {
-      // eslint-disable-next-line react-hooks/set-state-in-effect, react-hooks/exhaustive-deps -- async network call; setState runs after await; intentionally fires on gate conditions only
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- async network call; setState runs after await
       void newSession();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally fires on gate conditions only, not newSession's identity
   }, [sessionsLoading, activeSessionId, repo?.status]);
 
   useEffect(() => {
@@ -325,7 +338,7 @@ export function ChatConsole({ repoId }: { repoId: string }) {
 
               <div className="space-y-8">
                 {threads.map((th) => (
-                  <ThreadBlock key={th.id} thread={th} />
+                  <ThreadBlock key={th.id} thread={th} onOpenCode={setCodeTarget} />
                 ))}
               </div>
             </div>
@@ -358,6 +371,8 @@ export function ChatConsole({ repoId }: { repoId: string }) {
           </div>
         </div>
       </div>
+
+      <CodePanel repoId={repoId} target={codeTarget} onClose={() => setCodeTarget(null)} />
     </div>
   );
 }
@@ -424,7 +439,13 @@ function PendingIndicator() {
   );
 }
 
-function ThreadBlock({ thread }: { thread: Thread }) {
+function ThreadBlock({
+  thread,
+  onOpenCode,
+}: {
+  thread: Thread;
+  onOpenCode: (target: CodeTarget) => void;
+}) {
   return (
     <div>
       <div className="mb-3 flex justify-end">
@@ -441,12 +462,18 @@ function ThreadBlock({ thread }: { thread: Thread }) {
         </p>
       )}
 
-      {thread.answer && <AnswerBlock answer={thread.answer} />}
+      {thread.answer && <AnswerBlock answer={thread.answer} onOpenCode={onOpenCode} />}
     </div>
   );
 }
 
-function AnswerBlock({ answer }: { answer: AnswerResponse }) {
+function AnswerBlock({
+  answer,
+  onOpenCode,
+}: {
+  answer: AnswerResponse;
+  onOpenCode: (target: CodeTarget) => void;
+}) {
   if (!answer.answerable) {
     return (
       <div className="rounded-lg border border-border bg-surface/40 px-4 py-3 text-sm text-muted">
@@ -464,23 +491,26 @@ function AnswerBlock({ answer }: { answer: AnswerResponse }) {
       {answer.citations.length > 0 && (
         <div className="flex flex-wrap gap-2 border-t border-border px-4 py-3">
           {answer.citations.map((c, i) => (
-            <span
+            <button
               key={i}
-              className={`inline-flex items-center gap-1.5 rounded-sm border px-2 py-0.5 font-mono text-xs ${
+              onClick={() =>
+                onOpenCode({ path: c.path, startLine: c.start_line, endLine: c.end_line })
+              }
+              className={`inline-flex cursor-pointer items-center gap-1.5 rounded-sm border px-2 py-0.5 font-mono text-xs transition-colors ${
                 c.verified
-                  ? "border-primary/30 bg-[var(--primary-dim)] text-primary"
-                  : "border-rejected/40 text-rejected line-through decoration-rejected/60"
+                  ? "border-primary/30 bg-[var(--primary-dim)] text-primary hover:border-primary/60"
+                  : "border-rejected/40 text-rejected line-through decoration-rejected/60 hover:border-rejected/70"
               }`}
               title={
                 c.verified
-                  ? "Verified against the indexed source"
-                  : "This citation could not be verified — treat the claim as unverified"
+                  ? "Verified against the indexed source — click to open the code"
+                  : "This citation could not be verified — click to inspect the cited range"
               }
             >
               <VerifyBadge verified={c.verified} />
               {c.path}:{c.start_line}
               {c.end_line !== c.start_line ? `-${c.end_line}` : ""}
-            </span>
+            </button>
           ))}
         </div>
       )}

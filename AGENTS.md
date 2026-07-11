@@ -28,11 +28,14 @@ It's a **portfolio project** demonstrating SOTA AI-engineering depth (multi-agen
 orchestration, GraphRAG, eval-driven quality). The differentiators are: visible
 agent exploration, **adversarially-verified citations**, and an honest cost story.
 
-**Current state:** the backend "ask a question, get a verified cited answer" core
-works end-to-end and is proven on live data; a Chat UI exists; and there's now a
-real **landing page** (with a 3D hero graph) plus **Google sign-in** (Supabase,
-frontend only). The multi-agent fleet and the big graph/Mission-Control UI views
-are not built yet. **`STATUS.md` has the exact itemized breakdown — read it.**
+**Current state:** feature-complete for the core loop. Backend: verified cited
+Q&A with a local/global/escalate **query router**, the **multi-agent enrichment
+fleet** with a durable event stream, **Leiden communities**, and write-back
+escalation. Frontend: landing page (3D hero), **Mission Control** (live + replay),
+**Atlas** (graph + inspector), **Chat** (with code panel), **Walkthrough**, all
+under an app-shell icon rail, plus Google sign-in. Remaining: TypeScript
+extractor, eval harness, GitHub OAuth, deploy/demo/writeup.
+**`STATUS.md` has the exact itemized breakdown — read it.**
 
 ---
 
@@ -88,7 +91,8 @@ cartograph/
 │
 └── frontend/          ← Next.js 16, React 19, Tailwind v4, TypeScript
     ├── app/            layout.tsx, globals.css (design tokens), page.tsx (→ <Landing/>),
-    │                   r/[repo]/chat/{page.tsx,ChatConsole.tsx},
+    │                   r/[repo]/{layout.tsx (icon-rail shell), page.tsx (status redirect),
+    │                             run, atlas, chat, walkthrough}/,
     │                   auth/{callback,signout,auth-error}   ← Google sign-in routes
     ├── proxy.ts        ★ Next 16's renamed middleware — refreshes Supabase session
     ├── components/
@@ -96,9 +100,15 @@ cartograph/
     │   ├── landing/         Landing.tsx + GraphField(2D)/GraphField3D(R3F,cursor-follow)/
     │   │                    GraphFieldAuto, useMotionPreference (pause toggle),
     │   │                    VerifiedAnswer (live cite terminal), MagneticButton
+    │   ├── mission/         Mission Control (roster, feed, footer, scrubber, R3F graph)
+    │   ├── atlas/           AtlasView, GraphCanvas (2D force layout), Inspector
+    │   ├── code/CodePanel.tsx   slide-over source viewer (chat citations + atlas)
+    │   ├── walkthrough/     WalkthroughView (onboarding steps → atlas deep links)
+    │   ├── shell/IconRail.tsx   the /r/[repo]/* app-shell rail
     │   └── auth/AuthMenu.tsx   nav sign-in → account chip
     └── lib/
-        ├── api.ts           typed backend client
+        ├── api.ts           typed backend client (repos, questions, graph/file/walkthrough)
+        ├── events.ts, runState.ts, useRunEvents.ts   replay-first event store
         └── supabase/        client/server/middleware + useUser hook
 ```
 
@@ -135,9 +145,9 @@ These are the things that have actually bitten us. Internalize them.
 7. **Native Postgres enums** (`repo_status` etc.) store the Python enum **member
    NAMES (UPPERCASE)**, not `.value`. Adding an enum value needs an `ALTER TYPE ...
    ADD VALUE` migration (see `0003`). Reference the UPPERCASE label.
-8. **Migrations are sequential** (`0001`..`0011`). After autogenerate, rename to the
-   next number AND set `revision`/`down_revision` to match. Migration head is **0011**
-   (`communities` table for Leiden clusters; 0010 added `agent_events`).
+8. **Migrations are sequential** (`0001`..`0012`). After autogenerate, rename to the
+   next number AND set `revision`/`down_revision` to match. Migration head is **0012**
+   (RLS on `user_profiles`/`alembic_version`; 0011 added `communities`).
 9. **The cloner deliberately blocks `file://` and disables git hooks** — security.
    Don't "fix" it to clone local paths; tests work around it via the local-dir path.
 10. **`GIT_TERMINAL_PROMPT=0`** in the cloner is load-bearing — without it, a private

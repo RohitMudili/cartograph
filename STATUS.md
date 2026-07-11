@@ -3,16 +3,22 @@
 _Working log for picking up where we left off. Not the plan (see PLAN.md) — this
 is "where are we right now and what's next."_
 
-**Last updated:** 2026-07-08 (**query intelligence milestone**: the query router
-now routes local/global/escalate — architecture/onboarding questions ground in the
-synthesized RepoModel + Leiden community summaries; unanswerable questions spawn one
-scoped explorer whose critic-verified findings are WRITTEN BACK to the graph before
-re-answering (the "learning cache" loop is live). Leiden community detection runs as
-a pipeline phase (migration 0011). Verified `Node.annotations` now merge into every
-answer's context. New read APIs for the coming UI views: `GET /graph` (degree-capped
-slice), `GET /file` (chunk-reconstructed source), `GET /walkthrough`. Earlier: paste →
-live-mapping flow; Mission Control UI; the agent fleet with agent_events stream +
-replay/WS API. Backend tested green: 71 passing.)
+**Last updated:** 2026-07-12 (**frontend views milestone**: app shell icon rail
+across `/r/[repo]/*`; **Atlas** — community-colored force-layout graph canvas +
+search + community spotlight + inspector with "Ask about this"/"Open code";
+**code panel** — chat citation chips and Atlas both open the indexed source with
+the cited lines highlighted; **walkthrough view** — the synthesizer's onboarding
+steps as quiet prose deep-linking into Atlas; `/r/[repo]` status-aware redirect;
+the run view knows the new `communities` phase. Backend: migration **0012**
+(RLS on `user_profiles` + `alembic_version`, closing the Supabase advisor
+findings) — applied to live Supabase. Earlier: the query-intelligence milestone —
+the router routes local/global/escalate (RepoModel + Leiden community summaries
+ground big-picture answers; unanswerable questions spawn one scoped explorer whose
+critic-verified findings are WRITTEN BACK — the learning-cache loop is live),
+Leiden clustering as a pipeline phase (0011), verified annotations in every
+answer's context, and the `GET /graph` / `GET /file` / `GET /walkthrough` APIs.
+Earlier still: paste → live-mapping flow; Mission Control; the agent fleet with
+agent_events stream + replay/WS API. Backend tested green: 71 passing.)
 
 ---
 
@@ -138,9 +144,9 @@ door now sells it.
   constraints. Falls back to `general` on any error.
 - **Rate limiter** — token-bucket paces calls to `LLM_RPM` (default 10) so we
   don't trip Gemini free-tier 429s.
-- **Infra** — Supabase (async + pgbouncer fix), migrations at head **0011**
-  (0007 `user_profiles`, 0008 `session_id`, 0009 `conversation_id`, 0010
-  `agent_events`, 0011 `communities`), deny-all RLS + per-user RLS on repos/questions.
+- **Infra** — Supabase (async + pgbouncer fix), migrations at head **0012**
+  (0010 `agent_events`, 0011 `communities`, 0012 RLS on `user_profiles` +
+  `alembic_version`), deny-all RLS + per-user RLS on repos/questions.
 - **JWT library:** `PyJWT` (replaced `python-jose` which doesn't support EC keys
   needed for Supabase ES256 tokens). Use `PyJWK` for JWKS key construction.
 - **Upstash Redis session store** — `app/session/store.py`: 1-hour TTL per session,
@@ -250,7 +256,7 @@ Production shape:
   RepoModel's onboarding steps (404s with a reason until enrichment runs).
 - ⚠️ **Budget caps** — LLM rate limiter done; per-run hard $ cap w/ graceful abort not wired
 
-### Frontend  (~62%)
+### Frontend  (~85%)
 
 - ✅ App scaffold + design tokens
 - ✅ **Landing page** (`/`) — full brand surface: hero, live verified-citation
@@ -270,16 +276,29 @@ Production shape:
   **"Chat about your repo"** CTA. `components/mission/` (incl. PhaseIntro, FinishPanel)
   + `lib/{events,runState,useRunEvents}.ts`. Replay-first: one reducer renders live
   and replayed runs identically. Verified end-to-end via headless capture.
-- ❌ **Atlas** (`/r/[repo]/atlas`) — force-directed / semantic-zoom graph + inspector
-  (backend `GET /graph` is ready and tested)
-- ❌ **Code panel** — clicking a Chat citation chip should open source at the lines
-  (backend `GET /file` is ready and tested)
-- ❌ **Walkthrough view** (backend `GET /walkthrough` is ready and tested)
-- ⚠️ **"communities" pipeline phase not in the frontend reducer** — the pipeline now
-  emits `phase: communities` between summarizing and enriching; `lib/runState.ts`
-  (`PIPELINE_PHASES` + `PHASES`), PhaseIntro, and RunFooter labels don't know it yet
-  (harmless — the phase just isn't shown). Small fix, bundled into the next
-  frontend milestone.
+- ✅ **Atlas** (`/r/[repo]/atlas`) — **BUILT** (`components/atlas/`): a hand-rolled
+  2D canvas force layout (Fruchterman–Reingold, seeded so it's stable, progressive
+  over rAF so the map visibly settles) over `GET /graph`. Community-colored nodes
+  (verified-findings ring in amber), pan/zoom/hover/click, `f`-search with camera
+  flight, community legend with click-to-spotlight, and an **Inspector** (kind +
+  fqname, summary, community card, edges grouped by kind that navigate, "Ask about
+  this" → chat pre-filled via `?q=`, "Open code"). `?focus=<fqname>` deep-links a
+  node. Deliberately not Sigma.js: the API caps the slice at ~400 degree-ranked
+  nodes, well inside plain-canvas territory, and it kept the bundle small.
+- ✅ **Code panel** — **BUILT** (`components/code/CodePanel.tsx`): a slide-over
+  showing the indexed source from `GET /file` with the cited range highlighted
+  amber and scrolled into view. Opened by Chat citation chips (now buttons) and
+  Atlas's "Open code". What you read is what the verifier checked.
+- ✅ **Walkthrough view** (`/r/[repo]/walkthrough`) — **BUILT**: the onboarding
+  steps as quiet prose; steps deep-link into Atlas; honest empty state when the
+  agent pass hasn't produced one.
+- ✅ **App shell (icon rail)** — **BUILT** (`components/shell/IconRail.tsx` +
+  `app/r/[repo]/layout.tsx`): Run / Atlas / Chat / Walkthrough across every
+  `/r/[repo]/*` view, active = amber bar + filled icon. `/r/[repo]` itself now
+  redirects by status (indexing → run, else atlas). The full telemetry drawer +
+  command palette from FRONTEND.md §3 remain future polish.
+- ✅ **"communities" pipeline phase** — in the reducer (`PIPELINE_PHASES`/`PHASES`),
+  PhaseIntro ("Detecting code communities"), and RunFooter labels.
 - ❌ **App shell** — icon rail + telemetry drawer (only a minimal Chat top bar + the
   landing nav exist)
 - ✅ **"My repos" / history** — `GET /api/repos` + `frontend/app/repos/page.tsx`
@@ -348,7 +367,7 @@ The PLAN §2.2 topology is built end to end (`backend/app/agents/`):
   (credibility moat; also grades task #20)
 - ❌ **Deploy + demo video + writeup**
 
-**Overall v1 ≈ 82%.** Core value (cited Q&A) + auth identity + the **multi-agent
+**Overall v1 ≈ 88%.** Core value (cited Q&A) + auth identity + the **multi-agent
 enrichment fleet** + **Mission Control** + the full **query-intelligence layer**
 (router with global/escalate, Leiden communities, enrichment-grounded answers,
 write-back) are complete end to end, and the graph/file/walkthrough APIs the big

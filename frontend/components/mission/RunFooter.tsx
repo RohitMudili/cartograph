@@ -23,6 +23,7 @@ const PHASE_LABEL: Record<RunPhase, string> = {
   cloning: "cloning",
   parsing: "parsing",
   summarizing: "summarizing",
+  communities: "communities",
   planning: "planning",
   exploring: "exploring",
   synthesis: "synthesis",
