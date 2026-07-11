@@ -50,8 +50,9 @@ only), auth/multi-user, collaborative cursors, VS Code webview.
 - Global **⌘K command palette** from every route: "Ask: …" (→ chat with the
   query pre-filled), "Go to node …" (fuzzy symbol search), "Switch repo",
   "Re-index", "Toggle telemetry drawer", "Copy share link", "Replay last run".
-- Keyboard map: `⌘K` palette · `[` drawer · `1/2/3/4` view switch · `/` focus
-  chat input · `f` focus-node search in Atlas · `esc` universal dismiss.
+- Keyboard map: `⌘K` palette (❌) · `[` drawer (❌) · `1/2/3/4` view switch ✅ ·
+  `/` focus chat input ✅ · `f` focus-node search in Atlas ✅ · `esc` dismiss ✅
+  (code panel / selection).
 
 ## 3. App Shell
 
@@ -307,8 +308,9 @@ components/                                                         (planned vs 
 ├── chat/          # ⚠️ Chat is built but as one ChatConsole.tsx (under app/r/[repo]/chat/),
 │   not yet split into Thread/AnswerBlock/CitationChip/TransparencyStrip/…
 │   Citation chips now open the shared CodePanel; ?q= pre-fills the composer.
-└── shell/         # ⚠️ IconRail ✅ BUILT (via app/r/[repo]/layout.tsx).
-│   TopBar, TelemetryDrawer, CommandPalette, RepoSwitcher remain ❌.
+└── shell/         # ⚠️ IconRail ✅ (tooltips w/ shortcut hints; 1–4 switches views)
+│   + TopBar ✅ (one shared header across chat/atlas/walkthrough, leading/trailing
+│   slots). TelemetryDrawer, CommandPalette, RepoSwitcher remain ❌.
 ```
 
 > The Atlas graph will use Sigma.js (WebGL, 2D semantic zoom) per §5.3. The

@@ -3,7 +3,19 @@
 _Working log for picking up where we left off. Not the plan (see PLAN.md) — this
 is "where are we right now and what's next."_
 
-**Last updated:** 2026-07-12 (**frontend views milestone**: app shell icon rail
+**Last updated:** 2026-07-12 (**design-polish milestone**, same day: one shared
+**TopBar** across chat/atlas/walkthrough (the same state no longer looks three
+ways); icon rail gets styled tooltips + **1–4 keyboard view switching**; chat
+gets `/`-to-focus, thread entrance motion, press feedback on every pressable
+(new `pressable` utility + strong ease tokens); Atlas gets **zoom/fit controls**,
+per-edge-kind line styles (imports solid · calls dashed · inheritance dotted),
+an amber selection glow, and an **adaptive layout area** (small graphs fill the
+frame; range-capped repulsion + degree-0 gravity keep disconnected nodes at the
+cluster's edge); walkthrough becomes an ordered timeline with staggered reveal;
+code panel gets a copy-`file:line` button + drawer easing. Verified end-to-end
+with headless captures against a freshly indexed pybktree (agent pass wrote 3
+verified findings onto BKTree — visible in the Atlas inspector). Earlier same
+day: **frontend views milestone** — app shell icon rail
 across `/r/[repo]/*`; **Atlas** — community-colored force-layout graph canvas +
 search + community spotlight + inspector with "Ask about this"/"Open code";
 **code panel** — chat citation chips and Atlas both open the indexed source with

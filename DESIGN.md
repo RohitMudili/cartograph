@@ -159,3 +159,26 @@ DataTable (virtualized), CommitBadge (`fastapi @ a1b2c3 · 2 commits behind`).
   drawer becomes overlay, atlas inspector becomes bottom sheet; <768 read-only
   mode (chat + answers + landing) with an honest "Cartograph is a desktop tool"
   note on Run/Atlas.
+
+---
+
+## As implemented (2026-07-12 addendum)
+
+The tokens live in `frontend/app/globals.css` (`@theme`). Additions since the
+seed spec, all in service of the same concept:
+
+- `--color-surface-3: oklch(0.18 0.005 91.3)` — the hover/raised step. Elevation
+  in the app is **stepped surface lightness** (bg 0.10 → surface-2 0.13 →
+  surface 0.15 → surface-3 0.18); hairlines only where a step isn't enough.
+- Motion vocabulary: `--ease-out: cubic-bezier(0.23,1,0.32,1)` (entrances,
+  camera, reveals) and `--ease-drawer: cubic-bezier(0.32,0.72,0,1)` (the code
+  panel). Built-in CSS easings are too weak — never `ease-in` on UI.
+- `pressable` utility — 140ms `scale(0.97)` on `:active` for every pressable
+  element (buttons, chips, rail items, session rows). The interface hears the
+  click.
+- Keyboard actions are never animated (1–4 view switch, `/` focus, `f` search
+  are instant). Rail tooltips delay 300ms in, disappear instantly.
+- Atlas edge kinds carry **line styles**, not just color: imports solid, calls
+  dashed, inheritance dotted — the map reads in grayscale.
+- The one glow on the Atlas map is the selected node (amber, shadowBlur 16);
+  annotation-bearing nodes carry a thin amber ring. Everything else is flat.

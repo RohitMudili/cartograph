@@ -1,11 +1,11 @@
 "use client";
 
-import Link from "next/link";
+import { motion, useReducedMotion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 
-import { AuthMenu } from "@/components/auth/AuthMenu";
 import { CodePanel, type CodeTarget } from "@/components/code/CodePanel";
-import { Button, RouteBadge, Spinner, StatusChip, VerifyBadge } from "@/components/ui";
+import { TopBar } from "@/components/shell/TopBar";
+import { Button, Kbd, RouteBadge, Spinner, VerifyBadge } from "@/components/ui";
 import {
   type AnswerResponse,
   ApiError,
@@ -46,6 +46,22 @@ export function ChatConsole({ repoId }: { repoId: string }) {
     const q = new URLSearchParams(window.location.search).get("q");
     // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time mount read of a browser-only value
     if (q) setDraft(q);
+  }, []);
+
+  // `/` focuses the composer (FRONTEND.md keyboard map) — instant, no motion.
+  const composerRef = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "/" || e.metaKey || e.ctrlKey || e.altKey) return;
+      const typing =
+        document.activeElement instanceof HTMLInputElement ||
+        document.activeElement instanceof HTMLTextAreaElement;
+      if (typing) return;
+      e.preventDefault();
+      composerRef.current?.focus();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
   }, []);
 
   // Load repo, and poll while it's still indexing
@@ -195,48 +211,27 @@ export function ChatConsole({ repoId }: { repoId: string }) {
 
   return (
     <div className="flex h-dvh flex-col bg-bg">
-      {/* top bar */}
-      <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border px-4">
-        {/* hamburger — visible on small screens */}
-        <button
-          onClick={() => setSidebarOpen((o) => !o)}
-          className="flex size-8 items-center justify-center rounded-md text-muted hover:bg-surface-2 hover:text-ink sm:hidden"
-          aria-label={sidebarOpen ? "Close sidebar" : "Open sidebar"}
-        >
-          {sidebarOpen ? (
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-              <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-            </svg>
-          ) : (
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-              <path d="M2 4h12M2 8h12M2 12h12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-            </svg>
-          )}
-        </button>
-
-        <Link href="/" className="flex items-center gap-2 text-sm text-muted hover:text-ink">
-          <span className="text-primary" aria-hidden>
-            ◆
-          </span>
-          <span className="font-mono uppercase tracking-widest">Cartograph</span>
-        </Link>
-        <span className="text-faint">/</span>
-        <span className="truncate font-mono text-sm text-ink">{repoName}</span>
-        {repo && <StatusChip status={repo.status} />}
-        {repo?.stats?.nodes != null && repo.status === "indexed" && (
-          <span className="hidden font-mono text-xs text-faint tabular sm:inline">
-            {repo.stats.nodes} nodes · {repo.stats.edges} edges
-          </span>
-        )}
-        <span className="ml-auto" />
-        <Link
-          href="/repos"
-          className="hidden text-sm text-muted transition-colors hover:text-ink sm:inline"
-        >
-          My repos
-        </Link>
-        <AuthMenu />
-      </header>
+      <TopBar
+        view="Chat"
+        repo={repo}
+        leading={
+          <button
+            onClick={() => setSidebarOpen((o) => !o)}
+            className="pressable flex size-8 items-center justify-center rounded-md text-muted hover:bg-surface-3 hover:text-ink sm:hidden"
+            aria-label={sidebarOpen ? "Close sidebar" : "Open sidebar"}
+          >
+            {sidebarOpen ? (
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+              </svg>
+            ) : (
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <path d="M2 4h12M2 8h12M2 12h12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+              </svg>
+            )}
+          </button>
+        }
+      />
 
       <div className="flex flex-1 overflow-hidden">
         {/* session sidebar */}
@@ -276,10 +271,10 @@ export function ChatConsole({ repoId }: { repoId: string }) {
               <button
                 key={s.id}
                 onClick={() => switchSession(s.id)}
-                className={`w-full rounded-md px-3 py-2 text-left text-xs transition-colors ${
+                className={`pressable w-full rounded-md px-3 py-2 text-left text-xs transition-colors ${
                   s.id === activeSessionId
-                    ? "bg-primary/10 text-primary ring-1 ring-primary/30"
-                    : "text-muted hover:bg-surface-2 hover:text-ink"
+                    ? "bg-[var(--primary-dim)] text-primary"
+                    : "text-muted hover:bg-surface-3 hover:text-ink"
                 }`}
               >
                 <div className="truncate font-medium">
@@ -347,23 +342,31 @@ export function ChatConsole({ repoId }: { repoId: string }) {
           {/* composer */}
           <div className="shrink-0 border-t border-border bg-surface-2/40">
             <div className="mx-auto flex max-w-3xl items-end gap-3 px-6 py-4">
-              <textarea
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    ask();
+              <div className="relative flex-1">
+                <textarea
+                  ref={composerRef}
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      ask();
+                    }
+                  }}
+                  disabled={!ready}
+                  rows={1}
+                  placeholder={
+                    ready ? "Ask about this codebase…" : "Waiting for indexing to finish…"
                   }
-                }}
-                disabled={!ready}
-                rows={1}
-                placeholder={
-                  ready ? "Ask about this codebase…" : "Waiting for indexing to finish…"
-                }
-                className="max-h-40 flex-1 resize-none rounded-md border border-border bg-surface px-4 py-2.5 text-sm text-ink placeholder:text-faint focus:border-border-hi disabled:opacity-50"
-                aria-label="Ask a question about the repository"
-              />
+                  className="max-h-40 w-full resize-none rounded-md border border-border bg-surface px-4 py-2.5 pr-10 text-sm text-ink transition-colors placeholder:text-faint focus:border-border-hi disabled:opacity-50"
+                  aria-label="Ask a question about the repository"
+                />
+                {!draft && ready && (
+                  <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2">
+                    <Kbd>/</Kbd>
+                  </span>
+                )}
+              </div>
               <Button onClick={ask} disabled={!ready || !draft.trim()}>
                 Ask
               </Button>
@@ -406,7 +409,7 @@ function EmptyState({ onPick }: { onPick: (q: string) => void }) {
           <button
             key={q}
             onClick={() => onPick(q)}
-            className="rounded-sm border border-border bg-surface-2 px-3 py-1.5 text-xs text-muted hover:border-border-hi hover:text-ink"
+            className="pressable rounded-sm border border-border bg-surface-2 px-3 py-1.5 text-xs text-muted transition-colors hover:border-border-hi hover:bg-surface-3 hover:text-ink"
           >
             {q}
           </button>
@@ -446,8 +449,13 @@ function ThreadBlock({
   thread: Thread;
   onOpenCode: (target: CodeTarget) => void;
 }) {
+  const reduce = useReducedMotion();
   return (
-    <div>
+    <motion.div
+      initial={reduce ? { opacity: 0 } : { opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.2, ease: [0.23, 1, 0.32, 1] }}
+    >
       <div className="mb-3 flex justify-end">
         <div className="max-w-[80%] rounded-lg rounded-tr-sm border border-border bg-surface-2 px-4 py-2 text-sm text-ink">
           {thread.question}
@@ -463,7 +471,7 @@ function ThreadBlock({
       )}
 
       {thread.answer && <AnswerBlock answer={thread.answer} onOpenCode={onOpenCode} />}
-    </div>
+    </motion.div>
   );
 }
 
@@ -496,7 +504,7 @@ function AnswerBlock({
               onClick={() =>
                 onOpenCode({ path: c.path, startLine: c.start_line, endLine: c.end_line })
               }
-              className={`inline-flex cursor-pointer items-center gap-1.5 rounded-sm border px-2 py-0.5 font-mono text-xs transition-colors ${
+              className={`pressable inline-flex cursor-pointer items-center gap-1.5 rounded-sm border px-2 py-0.5 font-mono text-xs transition-colors ${
                 c.verified
                   ? "border-primary/30 bg-[var(--primary-dim)] text-primary hover:border-primary/60"
                   : "border-rejected/40 text-rejected line-through decoration-rejected/60 hover:border-rejected/70"

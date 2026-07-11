@@ -8,7 +8,7 @@
  * you read here is what was verified).
  */
 
-import { X } from "@phosphor-icons/react";
+import { Check, Copy, X } from "@phosphor-icons/react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 
@@ -102,24 +102,32 @@ export function CodePanel({
             initial={reduce ? { opacity: 0 } : { x: "100%" }}
             animate={reduce ? { opacity: 1 } : { x: 0 }}
             exit={reduce ? { opacity: 0 } : { x: "100%" }}
-            transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
+            transition={{ duration: 0.3, ease: [0.32, 0.72, 0, 1] }}
             className="fixed inset-y-0 right-0 z-50 flex w-full max-w-xl flex-col border-l border-border bg-surface"
             role="dialog"
             aria-label={`Source of ${target.path}`}
           >
-            <header className="flex h-12 shrink-0 items-center gap-3 border-b border-border px-4">
+            <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-4">
               <span className="truncate font-mono text-sm text-ink">{target.path}</span>
               {target.startLine != null && (
-                <span className="font-mono text-xs text-primary tabular">
-                  :{target.startLine}
+                <span className="shrink-0 rounded-sm bg-[var(--primary-dim)] px-1.5 py-0.5 font-mono text-xs text-primary tabular">
+                  {target.startLine}
                   {target.endLine != null && target.endLine !== target.startLine
-                    ? `-${target.endLine}`
+                    ? `–${target.endLine}`
                     : ""}
                 </span>
               )}
+              <span className="ml-auto" />
+              <CopyPathButton
+                text={
+                  target.startLine != null
+                    ? `${target.path}:${target.startLine}`
+                    : target.path
+                }
+              />
               <button
                 onClick={onClose}
-                className="ml-auto flex size-8 items-center justify-center rounded-md text-muted hover:bg-surface-2 hover:text-ink"
+                className="pressable flex size-8 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-3 hover:text-ink"
                 aria-label="Close code panel"
               >
                 <X size={16} />
@@ -160,6 +168,25 @@ export function CodePanel({
         </>
       )}
     </AnimatePresence>
+  );
+}
+
+function CopyPathButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      onClick={() => {
+        navigator.clipboard?.writeText(text).then(() => {
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1500);
+        });
+      }}
+      className="pressable flex size-8 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-3 hover:text-ink"
+      aria-label={copied ? "Copied" : `Copy ${text}`}
+      title={copied ? "Copied" : "Copy file:line"}
+    >
+      {copied ? <Check size={15} className="text-verified" /> : <Copy size={15} />}
+    </button>
   );
 }
 

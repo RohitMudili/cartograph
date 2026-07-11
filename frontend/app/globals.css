@@ -6,10 +6,13 @@
    ───────────────────────────────────────────────────────────────────────────── */
 
 @theme {
-  /* surfaces — pure neutral black glass; NO warm tint in backgrounds */
+  /* surfaces — pure neutral black glass; NO warm tint in backgrounds.
+     Elevation = stepped lightness (bg 0.10 → surface-2 0.13 → surface 0.15 →
+     surface-3 0.18 hover/raised), hairlines only where a step isn't enough. */
   --color-bg: oklch(0.1 0 0);
   --color-surface: oklch(0.15 0.004 91.3);
   --color-surface-2: oklch(0.13 0.003 91.3);
+  --color-surface-3: oklch(0.18 0.005 91.3);
   --color-border: oklch(0.28 0.008 91.3);
   --color-border-hi: oklch(0.4 0.02 91.3);
 
@@ -43,6 +46,18 @@
 :root {
   --primary-dim: oklch(0.84 0.165 91.3 / 0.14);
   --glow-live: 0 0 12px oklch(0.84 0.165 91.3 / 0.25);
+
+  /* Motion vocabulary — strong curves; built-in CSS easings are too weak. */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+/* Press feedback for any pressable element — the interface hears the click. */
+@utility pressable {
+  transition: transform 140ms var(--ease-out);
+  &:active {
+    transform: scale(0.97);
+  }
 }
 
 html {

@@ -15,7 +15,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { CodePanel, type CodeTarget } from "@/components/code/CodePanel";
 import { GraphCanvas } from "@/components/atlas/GraphCanvas";
 import { Inspector } from "@/components/atlas/Inspector";
-import { Spinner, StatusChip } from "@/components/ui";
+import { TopBar } from "@/components/shell/TopBar";
+import { Kbd, Spinner } from "@/components/ui";
 import { ApiError, type GraphSlice, type Repo, api } from "@/lib/api";
 
 /** Distinct, muted community colors: golden-angle hue walk, fixed s/l. */
@@ -102,7 +103,6 @@ export function AtlasView({ repoId }: { repoId: string }) {
   }, [query, graph]);
 
   const selected = selectedId != null ? (nodesById.get(selectedId) ?? null) : null;
-  const repoName = repo?.url.replace(/^https?:\/\/github\.com\//, "") ?? "…";
   const indexing = repo != null && repo.status !== "indexed" && repo.status !== "failed";
 
   function select(id: number | null) {
@@ -112,19 +112,20 @@ export function AtlasView({ repoId }: { repoId: string }) {
 
   return (
     <div className="flex h-dvh flex-col bg-bg">
-      <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border px-4">
-        <span className="font-mono text-sm uppercase tracking-widest text-muted">Atlas</span>
-        <span className="text-faint">/</span>
-        <span className="truncate font-mono text-sm text-ink">{repoName}</span>
-        {repo && <StatusChip status={repo.status} />}
-        {graph && (
-          <span className="hidden font-mono text-xs text-faint tabular sm:inline">
-            {graph.nodes.length}
-            {graph.total_nodes > graph.nodes.length ? ` of ${graph.total_nodes}` : ""} nodes ·{" "}
-            {graph.edges.length} edges
-          </span>
-        )}
-      </header>
+      <TopBar
+        view="Atlas"
+        repo={repo}
+        trailing={
+          graph && graph.total_nodes > graph.nodes.length ? (
+            <span
+              className="hidden font-mono text-xs text-faint tabular lg:inline"
+              title="The map shows the most-connected symbols; search still covers them all."
+            >
+              mapping {graph.nodes.length} of {graph.total_nodes}
+            </span>
+          ) : undefined
+        }
+      />
 
       <div className="relative flex min-h-0 flex-1">
         <div className="relative min-w-0 flex-1">
@@ -139,12 +140,17 @@ export function AtlasView({ repoId }: { repoId: string }) {
                 ref={searchRef}
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Find a symbol…  (f)"
-                className="w-full rounded-md border border-border bg-surface/90 py-1.5 pl-8 pr-3 font-mono text-xs text-ink placeholder:text-faint focus:border-border-hi"
+                placeholder="Find a symbol…"
+                className="w-full rounded-md border border-border bg-surface-2 py-1.5 pl-8 pr-8 font-mono text-xs text-ink transition-colors placeholder:text-faint focus:border-border-hi"
                 aria-label="Search symbols"
               />
+              {!query && (
+                <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2">
+                  <Kbd>f</Kbd>
+                </span>
+              )}
               {matches.length > 0 && (
-                <ul className="absolute inset-x-0 top-full z-20 mt-1 overflow-hidden rounded-md border border-border bg-surface shadow-lg">
+                <ul className="absolute inset-x-0 top-full z-20 mt-1 overflow-hidden rounded-md border border-border bg-surface-2">
                   {matches.map((n) => (
                     <li key={n.id}>
                       <button
@@ -152,7 +158,7 @@ export function AtlasView({ repoId }: { repoId: string }) {
                           select(n.id);
                           setQuery("");
                         }}
-                        className="block w-full truncate px-3 py-1.5 text-left font-mono text-xs text-muted hover:bg-surface-2 hover:text-ink"
+                        className="block w-full truncate px-3 py-1.5 text-left font-mono text-xs text-muted transition-colors hover:bg-surface-3 hover:text-ink"
                         title={n.fqname}
                       >
                         {n.fqname}
@@ -164,7 +170,7 @@ export function AtlasView({ repoId }: { repoId: string }) {
             </div>
 
             {graph && graph.communities.length > 0 && (
-              <div className="max-h-56 overflow-y-auto rounded-md border border-border bg-surface/90 p-2">
+              <div className="max-h-56 overflow-y-auto rounded-md border border-border bg-surface-2 p-2">
                 <p className="px-1 pb-1 font-mono text-[0.65rem] uppercase tracking-wide text-faint">
                   communities
                 </p>
@@ -174,10 +180,10 @@ export function AtlasView({ repoId }: { repoId: string }) {
                     onClick={() =>
                       setDimCommunity((cur) => (cur === c.key ? null : c.key))
                     }
-                    className={`flex w-full items-center gap-2 rounded-sm px-1.5 py-1 text-left text-xs transition-colors ${
+                    className={`pressable flex w-full items-center gap-2 rounded-sm px-1.5 py-1 text-left text-xs transition-colors ${
                       dimCommunity === c.key
-                        ? "bg-primary/10 text-ink ring-1 ring-primary/30"
-                        : "text-muted hover:bg-surface-2 hover:text-ink"
+                        ? "bg-[var(--primary-dim)] text-ink"
+                        : "text-muted hover:bg-surface-3 hover:text-ink"
                     }`}
                     title={c.summary ?? undefined}
                   >

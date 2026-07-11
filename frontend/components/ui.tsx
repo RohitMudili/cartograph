@@ -79,14 +79,23 @@ export function Button({
   children: ReactNode;
 }) {
   const base =
-    "inline-flex items-center justify-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50";
+    "pressable inline-flex items-center justify-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50";
   const styles =
     variant === "primary"
       ? "bg-primary text-on-primary hover:opacity-90"
-      : "border border-border text-ink hover:bg-surface-2";
+      : "border border-border text-ink hover:bg-surface-3";
   return (
     <button className={`${base} ${styles}`} {...props}>
       {children}
     </button>
+  );
+}
+
+/** Keyboard-shortcut hint — mono, quiet, never color-only. */
+export function Kbd({ children }: { children: ReactNode }) {
+  return (
+    <kbd className="inline-flex h-4 min-w-4 items-center justify-center rounded-[3px] border border-border bg-surface-2 px-1 font-mono text-[0.6rem] leading-none text-faint">
+      {children}
+    </kbd>
   );
 }

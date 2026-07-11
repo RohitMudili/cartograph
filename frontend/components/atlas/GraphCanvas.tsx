@@ -16,6 +16,7 @@
  * node. Pure view: selection state lives in the parent.
  */
 
+import { CornersOut, Minus, Plus } from "@phosphor-icons/react";
 import { useCallback, useEffect, useRef } from "react";
 
 import type { GraphEdge, GraphNode } from "@/lib/api";
@@ -47,8 +48,21 @@ function mulberry32(seed: number) {
   };
 }
 
-const AREA = 1200; // world-space square the layout targets
 const TICKS = 260;
+
+/** World-space square the layout targets — scales with the graph so a 9-node
+ *  repo fills the frame as confidently as a 400-node one. */
+function areaFor(count: number): number {
+  return Math.min(1200, Math.max(320, Math.sqrt(count) * 90));
+}
+
+/* Edge kinds get line styles, not just alpha — imports solid, calls dashed,
+   inheritance dotted — so the map reads in grayscale too. */
+const EDGE_DASH: Record<string, number[]> = {
+  calls: [5, 4],
+  inherits: [1.5, 3.5],
+  implements: [1.5, 3.5],
+};
 
 export function GraphCanvas({
   nodes,
@@ -78,6 +92,8 @@ export function GraphCanvas({
   const hoverRef = useRef<SimNode | null>(null);
   const dragRef = useRef<{ x: number; y: number; moved: boolean } | null>(null);
   const userMovedRef = useRef(false);
+  const fitRequestRef = useRef(false);
+  const areaRef = useRef(1200);
   const rafRef = useRef(0);
 
   // Props the draw loop reads without re-initializing the sim.
@@ -89,20 +105,22 @@ export function GraphCanvas({
   // ── Layout initialization (re-runs only when the data changes) ────────────
   useEffect(() => {
     const rand = mulberry32(nodes.length * 2654435761 + edges.length);
+    const area = areaFor(nodes.length);
+    areaRef.current = area;
     // Seed each community at a spot on a ring so clusters start separated.
     const communities = [...new Set(nodes.map((n) => n.community ?? "·"))];
     const centre = new Map<string, [number, number]>();
     communities.forEach((c, i) => {
       const a = (i / Math.max(communities.length, 1)) * Math.PI * 2;
-      centre.set(c, [Math.cos(a) * AREA * 0.28, Math.sin(a) * AREA * 0.28]);
+      centre.set(c, [Math.cos(a) * area * 0.28, Math.sin(a) * area * 0.28]);
     });
 
     const sim: SimNode[] = nodes.map((n) => {
       const [cx, cy] = centre.get(n.community ?? "·") ?? [0, 0];
       return {
         n,
-        x: cx + (rand() - 0.5) * AREA * 0.2,
-        y: cy + (rand() - 0.5) * AREA * 0.2,
+        x: cx + (rand() - 0.5) * area * 0.2,
+        y: cy + (rand() - 0.5) * area * 0.2,
         dx: 0,
         dy: 0,
         r: Math.min(3 + Math.sqrt(n.degree) * 1.3, 11),
@@ -139,15 +157,19 @@ export function GraphCanvas({
       const sim = simRef.current;
       const byId = byIdRef.current;
       if (sim.length === 0 || tickRef.current >= TICKS) return;
-      const k = Math.sqrt((AREA * AREA) / sim.length);
+      const area = areaRef.current;
+      const k = Math.sqrt((area * area) / sim.length);
       // Cooling: generous early movement, settling to stillness.
-      const t = AREA * 0.1 * (1 - tickRef.current / TICKS) ** 2 + 0.5;
+      const t = area * 0.1 * (1 - tickRef.current / TICKS) ** 2 + 0.5;
 
       for (const v of sim) {
         v.dx = 0;
         v.dy = 0;
       }
       // Repulsion (all pairs — the API caps nodes well below where this hurts).
+      // Range-capped: beyond ~2.5k only gravity acts, so disconnected nodes
+      // settle at the cluster's edge instead of being blasted into deep space.
+      const cutoff2 = k * 2.5 * (k * 2.5);
       for (let i = 0; i < sim.length; i++) {
         const a = sim[i];
         for (let j = i + 1; j < sim.length; j++) {
@@ -155,6 +177,7 @@ export function GraphCanvas({
           let ex = a.x - b.x;
           let ey = a.y - b.y;
           let d2 = ex * ex + ey * ey;
+          if (d2 > cutoff2) continue;
           if (d2 < 0.01) {
             ex = 0.1;
             ey = 0.1;
@@ -182,10 +205,12 @@ export function GraphCanvas({
         b.dx += ex * f;
         b.dy += ey * f;
       }
-      // Gentle gravity to keep disconnected pieces on the map.
+      // Gentle gravity to keep disconnected pieces on the map — stronger for
+      // edge-less nodes, which have no attraction holding them anywhere.
       for (const v of sim) {
-        v.dx -= v.x * 0.02;
-        v.dy -= v.y * 0.02;
+        const g = v.n.degree === 0 ? 0.1 : 0.03;
+        v.dx -= v.x * g;
+        v.dy -= v.y * g;
         const disp = Math.sqrt(v.dx * v.dx + v.dy * v.dy) || 0.1;
         const cap = Math.min(disp, t);
         v.x += (v.dx / disp) * cap;
@@ -194,9 +219,9 @@ export function GraphCanvas({
       tickRef.current += 1;
     };
 
-    const fitView = () => {
+    const fitTarget = (): Camera | null => {
       const sim = simRef.current;
-      if (sim.length === 0) return;
+      if (sim.length === 0) return null;
       let minX = Infinity,
         maxX = -Infinity,
         minY = Infinity,
@@ -212,9 +237,14 @@ export function GraphCanvas({
       const scale = Math.min(
         w / Math.max(maxX - minX + 120, 1),
         h / Math.max(maxY - minY + 120, 1),
-        2.2,
+        3.4,
       );
-      camRef.current = { x: (minX + maxX) / 2, y: (minY + maxY) / 2, scale };
+      return { x: (minX + maxX) / 2, y: (minY + maxY) / 2, scale };
+    };
+
+    const fitView = () => {
+      const t = fitTarget();
+      if (t) camRef.current = t;
     };
 
     const draw = () => {
@@ -231,6 +261,13 @@ export function GraphCanvas({
       if (tickRef.current < TICKS) {
         for (let i = 0; i < 6 && tickRef.current < TICKS; i++) tick();
         if (!userMovedRef.current) fitView();
+      }
+
+      // Fit-view button: fly to the full-map framing.
+      if (fitRequestRef.current) {
+        fitRequestRef.current = false;
+        const t = fitTarget();
+        if (t) camAnimRef.current = { from: { ...camRef.current }, to: t, t0: performance.now() };
       }
 
       // Camera flight.
@@ -274,11 +311,13 @@ export function GraphCanvas({
         ctx.strokeStyle = touchesSel
           ? "oklch(0.84 0.165 91.3 / 0.55)"
           : `oklch(0.5 0.01 91.3 / ${dimmed ? 0.05 : e.confidence < 0.7 ? 0.1 : 0.18})`;
+        ctx.setLineDash(EDGE_DASH[e.kind] ?? []);
         ctx.beginPath();
         ctx.moveTo(x1, y1);
         ctx.lineTo(x2, y2);
         ctx.stroke();
       }
+      ctx.setLineDash([]);
 
       // Nodes.
       for (const v of sim) {
@@ -289,9 +328,15 @@ export function GraphCanvas({
         const color = colors.get(v.n.community ?? "·") ?? "hsl(0 0% 55%)";
         ctx.globalAlpha = dimmed ? 0.18 : 1;
         ctx.fillStyle = isSel ? "oklch(0.84 0.165 91.3)" : color;
+        if (isSel) {
+          // The one glow on the map — the selected node is "alive".
+          ctx.shadowColor = "oklch(0.84 0.165 91.3 / 0.7)";
+          ctx.shadowBlur = 16;
+        }
         ctx.beginPath();
         ctx.arc(x, y, v.r * Math.min(cam.scale, 1.4), 0, Math.PI * 2);
         ctx.fill();
+        ctx.shadowBlur = 0;
         if (v.n.annotations > 0 && !dimmed) {
           // Verified-findings tick: a small amber ring.
           ctx.strokeStyle = "oklch(0.84 0.165 91.3 / 0.8)";
@@ -435,5 +480,41 @@ export function GraphCanvas({
     };
   }, [hitTest, onSelect]);
 
-  return <canvas ref={canvasRef} className="h-full w-full" style={{ cursor: "grab" }} />;
+  // Camera controls — animate to the new scale so zoom reads as movement.
+  const zoomBy = useCallback((factor: number) => {
+    const cam = camRef.current;
+    camAnimRef.current = {
+      from: { ...cam },
+      to: { ...cam, scale: Math.min(Math.max(cam.scale * factor, 0.2), 6) },
+      t0: performance.now(),
+    };
+    userMovedRef.current = true;
+  }, []);
+
+  const controlBtn =
+    "pressable flex size-8 items-center justify-center text-muted transition-colors hover:bg-surface-3 hover:text-ink";
+
+  return (
+    <div className="relative h-full w-full">
+      <canvas ref={canvasRef} className="h-full w-full" style={{ cursor: "grab" }} />
+      <div className="absolute bottom-4 right-4 flex flex-col overflow-hidden rounded-md border border-border bg-surface-2">
+        <button className={controlBtn} onClick={() => zoomBy(1.35)} aria-label="Zoom in" title="Zoom in">
+          <Plus size={14} />
+        </button>
+        <button className={controlBtn} onClick={() => zoomBy(1 / 1.35)} aria-label="Zoom out" title="Zoom out">
+          <Minus size={14} />
+        </button>
+        <button
+          className={`${controlBtn} border-t border-border`}
+          onClick={() => {
+            fitRequestRef.current = true;
+          }}
+          aria-label="Fit view"
+          title="Fit view"
+        >
+          <CornersOut size={14} />
+        </button>
+      </div>
+    </div>
+  );
 }

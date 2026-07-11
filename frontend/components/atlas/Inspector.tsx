@@ -79,7 +79,7 @@ export function Inspector({
         </div>
         <button
           onClick={onClose}
-          className="ml-auto flex size-7 shrink-0 items-center justify-center rounded-md text-muted hover:bg-surface-2 hover:text-ink"
+          className="pressable ml-auto flex size-7 shrink-0 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-3 hover:text-ink"
           aria-label="Close inspector"
         >
           <X size={14} />
@@ -135,7 +135,7 @@ export function Inspector({
                 <li key={i}>
                   <button
                     onClick={() => onNavigate(r.other.id)}
-                    className="flex w-full items-center gap-2 rounded-sm px-2 py-1 text-left font-mono text-xs text-muted hover:bg-surface-2 hover:text-ink"
+                    className="flex w-full items-center gap-2 rounded-sm px-2 py-1 text-left font-mono text-xs text-muted transition-colors hover:bg-surface-3 hover:text-ink"
                     title={r.other.fqname}
                   >
                     <span className="shrink-0 text-faint" aria-hidden>
@@ -158,7 +158,7 @@ export function Inspector({
       <div className="flex shrink-0 gap-2 border-t border-border p-3">
         <Link
           href={askHref}
-          className="inline-flex flex-1 items-center justify-center gap-2 rounded-md bg-primary px-3 py-2 text-xs font-medium text-on-primary hover:opacity-90"
+          className="pressable inline-flex flex-1 items-center justify-center gap-2 rounded-md bg-primary px-3 py-2 text-xs font-medium text-on-primary transition-opacity hover:opacity-90"
         >
           <ChatCircleText size={14} />
           Ask about this
@@ -166,7 +166,7 @@ export function Inspector({
         <button
           onClick={onOpenCode}
           disabled={!node.path}
-          className="inline-flex flex-1 items-center justify-center gap-2 rounded-md border border-border px-3 py-2 text-xs font-medium text-ink hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-50"
+          className="pressable inline-flex flex-1 items-center justify-center gap-2 rounded-md border border-border px-3 py-2 text-xs font-medium text-ink transition-colors hover:bg-surface-3 disabled:cursor-not-allowed disabled:opacity-50"
         >
           <FileCode size={14} />
           Open code
