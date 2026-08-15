@@ -25,8 +25,12 @@ question after the first one.
 > and unanswerable ones spawn a scoped explorer whose verified findings are
 > written back into the graph. Also shipped: **Chat UI** with session sidebar,
 > **landing page** (3D hero graph), **Google sign-in**, **"My repos"**, Redis
-> session store. Remaining: the Atlas/code-panel/walkthrough views, TypeScript
-> extractor, eval harness, GitHub OAuth, deploy — see [`STATUS.md`](STATUS.md)
+> session store, the **Atlas / code panel / walkthrough** views under an app-shell
+> icon rail, the **TypeScript/JavaScript extractor** (the indexer parses Python +
+> TS/JS + Markdown), and the **eval harness** (first live scoreboard: 100%
+> answerable, 100% fully verified, 97% citation precision, 100% recall).
+> Remaining: GitHub OAuth, incremental re-index, durable job queue,
+> deploy/demo/writeup — see [`STATUS.md`](STATUS.md)
 > for the itemized breakdown. Architecture: [`PLAN.md`](PLAN.md); UI plan:
 > [`FRONTEND.md`](FRONTEND.md); code-navigation map:
 > [`ARCHITECTURE.md`](ARCHITECTURE.md); design/product: [`DESIGN.md`](DESIGN.md) /

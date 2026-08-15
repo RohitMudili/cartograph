@@ -301,9 +301,10 @@ work, in rough leverage order:
    actionable?) split by question type — so we tune deliberately. This gap is
    exactly the kind of thing evals exist to catch.
 
-Status: items #1–3 shipped (markdown indexing, question-type-aware prompting,
-adjusted retrieval breadth). #4 (eval-graded measurement) is the last remaining
-piece and is tied to the eval harness build-out.
+Status: all four shipped — markdown indexing, question-type-aware prompting,
+adjusted retrieval breadth, and eval-graded measurement (the harness in
+`backend/evals/` scores keyword coverage + citation quality per question type;
+first scoreboard in `evals/results/`).
 
 ---
 
@@ -862,7 +863,9 @@ Each week ends in something demoable. Cut scope, never quality of what ships.
 - ✅ Leiden communities (flat, with Flash summaries; hierarchy is future polish);
   global route; router; escalation route with write-back (reuses the fleet's
   explorer + critic). Tested (`tests/integration/test_intelligence.py`).
-- ❌ TypeScript grammar support.
+- ✅ TypeScript/JavaScript grammar support (`parser/typescript.py` — all six
+  JS-family extensions, ESM + CommonJS, relative specifiers resolved to module
+  fqnames in-extractor).
 - ✅ **Milestone:** full index run with event log; global questions ground in the
   RepoModel + community summaries.
 
@@ -880,8 +883,12 @@ Each week ends in something demoable. Cut scope, never quality of what ships.
   ❌ the screen-recordable demo.
 - ❌ **Milestone:** the 2-minute demo recording.
 
-### Week 4 — The proof (evals, hardening, launch) — ❌ NOT STARTED
-- ❌ Eval datasets, full harness, results history, CI smoke subset, README table + cost chart.
+### Week 4 — The proof (evals, hardening, launch) — ⚠️ IN PROGRESS
+- ✅ Eval harness (`backend/evals/`): golden datasets, deterministic scoring
+  (citation precision/recall, keyword coverage, honesty rates, latency/cost),
+  markdown scoreboards in `evals/results/`. First live run (pybktree): 100%
+  answerable · 100% fully verified · 97% precision · 100% recall.
+  ❌ CI smoke subset, README results table + cost chart.
 - ❌ Incremental re-index; security hardening checklist (§9); per-run budget cap.
   (✅ deny-all RLS on the DB; ✅ LLM rate limiter.)
 - ❌ Deploy live demo (Supabase DB is live; app not deployed).
@@ -889,23 +896,25 @@ Each week ends in something demoable. Cut scope, never quality of what ships.
 - ❌ **Milestone:** public URL + repo + writeup + video.
 
 ### Net remaining, by area (see STATUS.md for the itemized checklist)
-- **Backend:** TypeScript extractor, durable worker/queue (indexing now runs as an
-  in-process background task), GitHub OAuth, incremental re-index.
+- **Backend:** durable worker/queue (indexing now runs as an in-process
+  background task), GitHub OAuth, incremental re-index.
   (✅ router/global/escalate routes with write-back, ✅ Leiden communities,
   ✅ graph/file/walkthrough APIs, ✅ answerer reads enrichment annotations,
-  ✅ markdown extractor, ✅ WebSocket event stream + replay.)
+  ✅ markdown extractor, ✅ TypeScript/JavaScript extractor,
+  ✅ WebSocket event stream + replay.)
 - **Frontend:** Atlas, code panel, walkthrough view, app shell + drawer — the
   backend APIs for all of these are live and tested. (✅ landing, ✅ 3D hero,
   ✅ Google sign-in, ✅ Chat, ✅ Mission Control + event store, ✅ "my repos"/history.)
 - **Agent fleet:** ✅ §2.2 topology built (planner→explorers→synthesizer→critic→
   librarian + event stream), ✅ rendered live in Mission Control, ✅ feeding the
   query layer (annotations/RepoModel/communities in answers; escalation write-back).
-- **Cross-cutting:** eval harness, deploy/demo/writeup.
+- **Cross-cutting:** deploy/demo/writeup. (✅ eval harness, first scoreboard in
+  `evals/results/`.)
 
 ### Explicit cut-line (if behind schedule)
-Cut in this order: TypeScript support → onboarding walkthrough overlay → semantic
-answer cache → incremental re-index (ship "re-index = full re-run" with the design
-documented). **Never cut:** citation verification, the critic, evals, mission control.
+Cut in this order: onboarding walkthrough overlay → semantic answer cache →
+incremental re-index (ship "re-index = full re-run" with the design documented).
+**Never cut:** citation verification, the critic, evals, mission control.
 
 ---
 
