@@ -49,11 +49,13 @@ def score_case(
 ) -> CaseResult:
     """Score one answered case. `citations` is [(path, verified), ...]."""
     expected = {_norm_path(p) for p in case.expected_paths}
+    acceptable = expected | {_norm_path(p) for p in case.optional_paths}
     verified_paths = [_norm_path(p) for p, ok in citations if ok]
 
-    hits = [p for p in verified_paths if p in expected]
-    precision = len(hits) / len(verified_paths) if verified_paths else 0.0
-    recall = len(set(hits)) / len(expected) if expected else 1.0
+    precision_hits = [p for p in verified_paths if p in acceptable]
+    precision = len(precision_hits) / len(verified_paths) if verified_paths else 0.0
+    recall_hits = {p for p in verified_paths if p in expected}
+    recall = len(recall_hits) / len(expected) if expected else 1.0
 
     text_lower = answer_text.lower()
     missing = [k for k in case.expected_keywords if k.lower() not in text_lower]
@@ -167,14 +169,22 @@ def render_markdown(report: EvalReport) -> str:
             f"| {pct(r.keyword_coverage)} | {r.latency_s:.1f}s "
             f"| {r.input_tokens}/{r.output_tokens} |"
         )
-    problems = [r for r in report.results if r.error or r.missing_keywords]
+    problems = [
+        r for r in report.results if r.error or r.missing_keywords or r.citation_precision < 1.0
+    ]
     if problems:
         lines += ["", "## Attention", ""]
         for r in problems:
             if r.error:
                 lines.append(f"- **{r.case_id}**: ERROR — {r.error}")
-            else:
+                continue
+            if r.missing_keywords:
                 lines.append(f"- **{r.case_id}**: answer missed keywords: {r.missing_keywords}")
+            if r.citation_precision < 1.0:
+                lines.append(
+                    f"- **{r.case_id}**: off-target citations — cited paths: {r.cited_paths} "
+                    "(consider optional_paths if these are legitimate)"
+                )
     lines += ["", "## Answers", ""]
     for r in report.results:
         if r.error:

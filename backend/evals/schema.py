@@ -24,6 +24,14 @@ class GoldenCase(BaseModel):
         default_factory=list,
         description="Repo-relative paths a grounded answer should cite.",
     )
+    optional_paths: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Paths that are legitimate to cite (they count toward precision) "
+            "but are not required (they don't count toward recall) — e.g. "
+            "README/setup/tests on an onboarding question."
+        ),
+    )
     expected_keywords: list[str] = Field(
         default_factory=list,
         description="Substrings the answer text must contain (case-insensitive).",

@@ -28,6 +28,11 @@ _RESULTS_DIR = Path(__file__).parent / "results"
 
 
 async def _main() -> int:
+    # Windows consoles default to cp1252, which can't print the scoreboard's
+    # ✓/✗ marks — force UTF-8 (and never crash a finished eval over a glyph).
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
     parser = argparse.ArgumentParser(prog="evals", description="Cartograph eval harness")
     parser.add_argument("--golden", type=Path, default=_DEFAULT_GOLDEN, help="golden-set JSON")
     parser.add_argument("--repo", default=None, help="repo URL (default: the golden set's)")

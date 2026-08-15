@@ -57,6 +57,18 @@ def test_precision_penalizes_off_target_citations() -> None:
     assert r.citation_recall == 1.0
 
 
+def test_optional_paths_count_toward_precision_not_recall() -> None:
+    case = _case(optional_paths=["README.md"])
+    # Cites only the README: precision credits it, recall still demands src/f.py.
+    r = _score(case, citations=[("README.md", True)])
+    assert r.citation_precision == 1.0
+    assert r.citation_recall == 0.0
+    # Cites both: perfect on both axes.
+    r2 = _score(case, citations=[("README.md", True), ("src/f.py", True)])
+    assert r2.citation_precision == 1.0
+    assert r2.citation_recall == 1.0
+
+
 def test_recall_over_multiple_expected_paths() -> None:
     case = _case(expected_paths=["src/f.py", "src/g.py"])
     r = _score(case, citations=[("src/f.py", True)])

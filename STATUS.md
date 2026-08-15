@@ -398,8 +398,13 @@ The PLAN §2.2 topology is built end to end (`backend/app/agents/`):
   (expected files proven by ≥1 verified citation), keyword coverage, answerable +
   fully-verified rates, latency/token/cost per question. Markdown scoreboard to
   `evals/results/`. Run: `cd backend && uv run python -m evals` (`--index` to index
-  first). Scoring logic unit-tested (10 tests). First live run pending: the
-  Supabase project is paused — unpause, then run.
+  first). Scoring logic unit-tested. **First live run (2026-08-16, Gemini free
+  tier, pybktree): answerable 100% · fully verified 100% · citation precision
+  97% · citation recall 100% · keyword coverage 100%** — see `evals/results/`.
+  Golden cases support `optional_paths` (legitimate-to-cite files that count
+  toward precision but aren't required for recall). Note from the run: every
+  case took the **local** route — this pybktree index predates enrichment, so
+  no RepoModel/community summaries exist; re-index to light up the global route.
 - ❌ **Deploy + demo video + writeup**
 
 **Overall v1 ≈ 88%.** Core value (cited Q&A) + auth identity + the **multi-agent

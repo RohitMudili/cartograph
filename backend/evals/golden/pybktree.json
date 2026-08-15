@@ -4,44 +4,105 @@
     {
       "id": "hamming-distance",
       "question": "What does hamming_distance do?",
-      "expected_paths": ["pybktree.py"],
-      "expected_keywords": ["hamming", "bit"],
-      "notes": "Specific-symbol question; the demo question the product was first proven on."
+      "expected_paths": [
+        "pybktree.py"
+      ],
+      "expected_keywords": [
+        "hamming",
+        "bit"
+      ],
+      "notes": "Specific-symbol question; the demo question the product was first proven on.",
+      "optional_paths": [
+        "README.md",
+        "setup.py",
+        "test_bktree.py"
+      ]
     },
     {
       "id": "add-and-find",
       "question": "How does BKTree add items and search for nearby matches?",
-      "expected_paths": ["pybktree.py"],
-      "expected_keywords": ["add", "find", "distance"],
-      "notes": "Two-method mechanics; a good answer covers the tree walk and pruning."
+      "expected_paths": [
+        "pybktree.py"
+      ],
+      "expected_keywords": [
+        "add",
+        "find",
+        "distance"
+      ],
+      "notes": "Two-method mechanics; a good answer covers the tree walk and pruning.",
+      "optional_paths": [
+        "README.md",
+        "setup.py",
+        "test_bktree.py"
+      ]
     },
     {
       "id": "onboarding",
       "question": "What is this project and what would I use it for?",
-      "expected_paths": ["pybktree.py"],
-      "expected_keywords": ["tree", "distance"],
-      "notes": "Onboarding/global route; grounded in the module docstring or README."
+      "expected_paths": [
+        "pybktree.py"
+      ],
+      "expected_keywords": [
+        "tree",
+        "distance"
+      ],
+      "notes": "Onboarding/global route; grounded in the module docstring or README.",
+      "optional_paths": [
+        "README.md",
+        "setup.py",
+        "test_bktree.py"
+      ]
     },
     {
       "id": "usage",
       "question": "How do I create a BKTree and query it for close matches?",
-      "expected_paths": ["pybktree.py"],
-      "expected_keywords": ["BKTree", "find"],
-      "notes": "How-to; should show the constructor's distance function and find()."
+      "expected_paths": [
+        "pybktree.py"
+      ],
+      "expected_keywords": [
+        "BKTree",
+        "find"
+      ],
+      "notes": "How-to; should show the constructor's distance function and find().",
+      "optional_paths": [
+        "README.md",
+        "setup.py",
+        "test_bktree.py"
+      ]
     },
     {
       "id": "architecture",
       "question": "How is this library structured internally? What does the tree look like?",
-      "expected_paths": ["pybktree.py"],
-      "expected_keywords": ["node", "distance"],
-      "notes": "Architecture; nodes keyed by distance from the parent."
+      "expected_paths": [
+        "pybktree.py"
+      ],
+      "expected_keywords": [
+        "node",
+        "distance"
+      ],
+      "notes": "Architecture; nodes keyed by distance from the parent.",
+      "optional_paths": [
+        "README.md",
+        "setup.py",
+        "test_bktree.py"
+      ]
     },
     {
       "id": "add-vs-find",
       "question": "What is the difference between add and find in this codebase?",
-      "expected_paths": ["pybktree.py"],
-      "expected_keywords": ["add", "find"],
-      "notes": "Comparison type; both symbols must be grounded."
+      "expected_paths": [
+        "pybktree.py"
+      ],
+      "expected_keywords": [
+        "add",
+        "find"
+      ],
+      "notes": "Comparison type; both symbols must be grounded.",
+      "optional_paths": [
+        "README.md",
+        "setup.py",
+        "test_bktree.py"
+      ]
     }
   ]
 }
