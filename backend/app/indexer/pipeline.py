@@ -36,6 +36,7 @@ from app.indexer.graph_builder import BuildStats, GraphBuilder
 from app.indexer.parser.markdown import extract_markdown
 from app.indexer.parser.python import extract_python
 from app.indexer.parser.types import FileExtract
+from app.indexer.parser.typescript import extract_typescript
 from app.indexer.summarizer import Summarizer
 
 log = structlog.get_logger(__name__)
@@ -53,13 +54,26 @@ SKIP_DIRS = {
     ".pytest_cache",
     ".ruff_cache",
     "site-packages",
+    ".next",
+    ".turbo",
+    "coverage",
+    "vendor",
 }
 
 # Extension → extractor. Adding a language is a new entry here plus its extractor.
 EXTRACTORS = {
     ".py": extract_python,
     ".md": extract_markdown,
+    ".ts": extract_typescript,
+    ".tsx": extract_typescript,
+    ".js": extract_typescript,
+    ".jsx": extract_typescript,
+    ".mjs": extract_typescript,
+    ".cjs": extract_typescript,
 }
+
+# Generated/bundled artifacts worth skipping even outside SKIP_DIRS.
+_SKIP_SUFFIXES = (".min.js", ".min.mjs", ".bundle.js")
 
 
 @dataclass(slots=True)
@@ -77,6 +91,8 @@ def _iter_source_files(workspace: Path) -> list[Path]:
         if not path.is_file():
             continue
         if any(part in SKIP_DIRS for part in path.relative_to(workspace).parts):
+            continue
+        if path.name.endswith(_SKIP_SUFFIXES):
             continue
         if path.suffix in EXTRACTORS:
             out.append(path)

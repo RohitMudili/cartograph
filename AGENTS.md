@@ -33,8 +33,9 @@ Q&A with a local/global/escalate **query router**, the **multi-agent enrichment
 fleet** with a durable event stream, **Leiden communities**, and write-back
 escalation. Frontend: landing page (3D hero), **Mission Control** (live + replay),
 **Atlas** (graph + inspector), **Chat** (with code panel), **Walkthrough**, all
-under an app-shell icon rail, plus Google sign-in. Remaining: TypeScript
-extractor, eval harness, GitHub OAuth, deploy/demo/writeup.
+under an app-shell icon rail, plus Google sign-in. The indexer parses Python,
+TypeScript/JavaScript (`.ts/.tsx/.js/.jsx/.mjs/.cjs`), and Markdown. Remaining:
+eval harness, GitHub OAuth, deploy/demo/writeup.
 **`STATUS.md` has the exact itemized breakdown — read it.**
 
 ---
@@ -295,8 +296,8 @@ UI views need. Remaining, in rough order:
    graph + inspector over `GET /graph`), the chat **code panel** (citation chip →
    `GET /file`), and the **walkthrough view** (`GET /walkthrough`). Also teach
    `lib/runState.ts` the new `communities` pipeline phase. (`FRONTEND.md §5.3`.)
-2. **TypeScript extractor** (tree_sitter_typescript is already a dependency) and
-   the **eval harness** (`evals/` — the credibility moat).
+2. **The eval harness** (`evals/` — the credibility moat). The TypeScript/JS
+   extractor is DONE (`parser/typescript.py`, all six JS-family extensions).
 3. **GitHub OAuth for private repos** (`PLAN.md §9A`) — wiring + operator setup.
 4. **Backend production shape** — a **durable** job queue/worker (indexing runs as
    an in-process background task via `start_index`; doesn't survive a restart),

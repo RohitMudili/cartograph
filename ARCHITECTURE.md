@@ -46,11 +46,16 @@ backend/app/api/repos.py          create_index()  — HTTP entry, returns 202 IN
   INDEXED on the static + summary layers — the graceful-finish path).
 - `cloner.py` — **security-critical.** Blocks `file://`, disables hooks, size caps,
   `GIT_TERMINAL_PROMPT=0` for fast-fail on private repos. Don't weaken it.
-- `parser/python.py` / `parser/markdown.py` — pure (no DB). `python.py` walks the
-  tree-sitter AST; `markdown.py` splits `.md` into `DOC` nodes by heading section.
+- `parser/python.py` / `parser/typescript.py` / `parser/markdown.py` — pure (no
+  DB). `python.py` walks the tree-sitter AST; `typescript.py` covers the whole JS
+  family (`.ts/.tsx/.js/.jsx/.mjs/.cjs`, one extractor dispatching grammars per
+  extension — interfaces/enums land as CLASS nodes, `const f = () =>` counts as a
+  function, relative import specifiers are resolved to dotted module fqnames in
+  the extractor so the graph builder needs no JS-specific logic); `markdown.py`
+  splits `.md` into `DOC` nodes by heading section.
   To **add a language/format**: write a new extractor producing the same
   `FileExtract` shape and register it in `pipeline.py`'s `EXTRACTORS` dict (keyed by
-  extension). Next candidates: TypeScript/JavaScript, and other doc/config formats.
+  extension). Next candidates: other doc/config formats (`.rst`, `.toml`, `.yaml`).
 - `parser/types.py` — the `RawSymbol`/`RawImport`/`RawCall`/`FileExtract` dataclasses.
   The decoupling between parser output and ORM is deliberate (parsers stay testable).
 - `graph_builder.py` — where the per-file extracts become a connected graph.

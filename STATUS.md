@@ -3,7 +3,17 @@
 _Working log for picking up where we left off. Not the plan (see PLAN.md) — this
 is "where are we right now and what's next."_
 
-**Last updated:** 2026-07-12 (**design-polish milestone**, same day: one shared
+**Last updated:** 2026-08-15 (**TypeScript/JavaScript extractor**:
+`parser/typescript.py` covers `.ts/.tsx/.js/.jsx/.mjs/.cjs` with one extractor
+dispatching grammars per extension — classes/methods, interfaces+enums (as CLASS),
+`const f = () =>` functions, class-property arrow methods, JSDoc docstrings, ESM +
+CommonJS imports with relative specifiers resolved to dotted module fqnames
+in-extractor (so the graph builder needed zero changes), calls incl. `new X()`.
+Wired into `EXTRACTORS`; SKIP_DIRS grew `.next`/`.turbo`/`coverage`/`vendor` and
+minified/bundled files are skipped. 9 new unit tests; smoke-tested over this
+repo's own frontend: 50 files, 217 symbols, 872 calls, 0 parse errors. Also fixed
+a frontend drift: the `RepoStatus` union + StatusChip now know `enriching`.
+Earlier: 2026-07-12 **design-polish milestone**, same day: one shared
 **TopBar** across chat/atlas/walkthrough (the same state no longer looks three
 ways); icon rail gets styled tooltips + **1–4 keyboard view switching**; chat
 gets `/`-to-focus, thread entrance motion, press feedback on every pressable
@@ -231,7 +241,9 @@ Indexing layer:
 - ✅ **Markdown extractor** — `.md` files parse into `DOC` nodes by heading section
   (`parser/markdown.py`, wired into `EXTRACTORS`), so READMEs/docs feed retrieval.
 - ❌ **Other docs / config extractors** (`.rst`, `.txt`, `.toml`, `.yaml`, etc. — not parsed)
-- ❌ **TypeScript / JavaScript extractor** (v1 was meant to cover TS/JS too)
+- ✅ **TypeScript / JavaScript extractor** — `parser/typescript.py`, all six
+  JS-family extensions, ESM + CommonJS, unit-tested + smoke-tested on this repo's
+  own frontend (0 parse errors)
 - ✅ **Community detection (Leiden) + summaries** — `indexer/communities.py`, runs
   as a pipeline phase; flat (single-level) clustering with per-community Flash
   summaries. A 2–3 level hierarchy is still future polish.
@@ -383,9 +395,10 @@ The PLAN §2.2 topology is built end to end (`backend/app/agents/`):
 enrichment fleet** + **Mission Control** + the full **query-intelligence layer**
 (router with global/escalate, Leiden communities, enrichment-grounded answers,
 write-back) are complete end to end, and the graph/file/walkthrough APIs the big
-UI views need are live. Biggest remaining chunks: the **frontend views** (app
-shell, Atlas, chat code panel, walkthrough — the backend for all of them is
-ready), TypeScript extractor, eval harness, GitHub OAuth, deploy/demo/writeup.
+UI views need are live. The frontend views (app shell, Atlas, code panel,
+walkthrough) are built, and the indexer parses Python + TypeScript/JavaScript +
+Markdown. Biggest remaining chunks: eval harness, GitHub OAuth, incremental
+re-indexing, a durable job queue, deploy/demo/writeup.
 
 ### Dependency gotchas (new, this session)
 - **`python-jose` doesn't support EC JWK keys** — `jose.jwk.construct()` fails
