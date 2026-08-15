@@ -296,8 +296,9 @@ UI views need. Remaining, in rough order:
    graph + inspector over `GET /graph`), the chat **code panel** (citation chip →
    `GET /file`), and the **walkthrough view** (`GET /walkthrough`). Also teach
    `lib/runState.ts` the new `communities` pipeline phase. (`FRONTEND.md §5.3`.)
-2. **The eval harness** (`evals/` — the credibility moat). The TypeScript/JS
-   extractor is DONE (`parser/typescript.py`, all six JS-family extensions).
+2. ~~TypeScript extractor + eval harness~~ — both DONE (`parser/typescript.py`;
+   `backend/evals/` — `uv run python -m evals` runs the golden set and writes a
+   scoreboard to `evals/results/`).
 3. **GitHub OAuth for private repos** (`PLAN.md §9A`) — wiring + operator setup.
 4. **Backend production shape** — a **durable** job queue/worker (indexing runs as
    an in-process background task via `start_index`; doesn't survive a restart),

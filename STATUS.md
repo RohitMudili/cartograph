@@ -3,7 +3,12 @@
 _Working log for picking up where we left off. Not the plan (see PLAN.md) — this
 is "where are we right now and what's next."_
 
-**Last updated:** 2026-08-15 (**TypeScript/JavaScript extractor**:
+**Last updated:** 2026-08-15 (**eval harness**: `backend/evals/` — golden Q&A
+through the real router, deterministic scoring [citation precision/recall,
+keyword coverage, honesty rates, latency/cost], markdown scoreboard to
+`evals/results/`, pybktree golden set of 6 cases, 10 scoring unit tests. First
+live run blocked only on unpausing Supabase. Same day, **TypeScript/JavaScript
+extractor**:
 `parser/typescript.py` covers `.ts/.tsx/.js/.jsx/.mjs/.cjs` with one extractor
 dispatching grammars per extension — classes/methods, interfaces+enums (as CLASS),
 `const f = () =>` functions, class-property arrow methods, JSDoc docstrings, ESM +
@@ -387,8 +392,14 @@ The PLAN §2.2 topology is built end to end (`backend/app/agents/`):
 > through the same reducer.
 
 ### Cross-cutting
-- ❌ **Eval harness** — golden Q&A + citation precision/recall + answer-quality scoreboard
-  (credibility moat; also grades task #20)
+- ✅ **Eval harness** — `backend/evals/`: golden Q&A sets (`evals/golden/*.json`)
+  run through the REAL router and scored deterministically (no LLM judge): citation
+  precision (verified citations landing in expected files), citation recall
+  (expected files proven by ≥1 verified citation), keyword coverage, answerable +
+  fully-verified rates, latency/token/cost per question. Markdown scoreboard to
+  `evals/results/`. Run: `cd backend && uv run python -m evals` (`--index` to index
+  first). Scoring logic unit-tested (10 tests). First live run pending: the
+  Supabase project is paused — unpause, then run.
 - ❌ **Deploy + demo video + writeup**
 
 **Overall v1 ≈ 88%.** Core value (cited Q&A) + auth identity + the **multi-agent
