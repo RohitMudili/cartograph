@@ -18,6 +18,7 @@ export type RepoStatus =
   | "cloning"
   | "parsing"
   | "summarizing"
+  | "enriching"
   | "indexed"
   | "failed";
 

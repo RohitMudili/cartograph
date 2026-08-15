@@ -46,6 +46,7 @@ const STATUS_LABEL: Record<RepoStatus, string> = {
   cloning: "Cloning",
   parsing: "Parsing",
   summarizing: "Summarizing",
+  enriching: "Enriching",
   indexed: "Indexed",
   failed: "Failed",
 };
